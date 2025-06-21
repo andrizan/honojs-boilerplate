@@ -4,7 +4,7 @@ import type { Context } from "hono";
 import { sign } from "hono/jwt";
 import { users } from "../db/schema.js";
 import { db } from "../lib/db.js";
-import { redisGet, redisSet } from "../lib/redis.js";
+import { redisDel, redisGet, redisSet } from "../lib/redis.js";
 import type { User } from "../types/users.js";
 
 export const googleAuthUrl = async (c: Context) => {
@@ -161,4 +161,23 @@ export const getRefreshToken = async (c: Context) => {
 		token_type: "Bearer",
 		expires_in: 900, // 15 menit (900 detik)
 	});
+};
+
+export const logout = async (c: Context) => {
+	const user: User = c.get("user");
+	if (!user) {
+		return c.json({ error: "Unauthorized" }, 401);
+	}
+
+	const deleted = await redisDel(`users:refresh_token:${user.refreshToken}`);
+	if (!deleted) {
+		return c.json({ error: "Failed to Logged out" }, 500);
+	}
+
+	await db
+		.update(users)
+		.set({ refreshToken: "" })
+		.where(eq(users.email, user.email));
+
+	return c.json({ message: "Logged out successfully" }, 200);
 };

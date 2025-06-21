@@ -10,10 +10,6 @@ export const jwtMiddleware = async (c: Context, next: Next) => {
 	try {
 		const payload = await verify(token, process.env.JWT_SECRET_KEY || "");
 
-		if (!payload || !payload.exp || Date.now() / 1000 > payload.exp) {
-			return c.json({ error: "Token expired" }, 401);
-		}
-
 		c.set("user", payload);
 		await next();
 	} catch {

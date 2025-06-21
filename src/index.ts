@@ -31,7 +31,7 @@ app.get("/api/health", async (c) => {
 	const dbStatus = await checkDbConnection();
 
 	return c.json({
-		status: "ok",
+		status: redisError || dbStatus.error ? "error" : "ok",
 		redis: { status: redisStatus, ping: redisPing, error: redisError },
 		database: { status: dbStatus.status, error: dbStatus.error },
 		timestamp: new Date().toISOString(),

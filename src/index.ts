@@ -6,6 +6,7 @@ import { logger } from "hono/logger";
 import { checkDbConnection } from "./lib/db.js";
 import { getRedis } from "./lib/redis.js";
 import { auth, users } from "./routers/index.route.js";
+import { parse } from "node:path";
 
 const app = new Hono();
 app.use("*", cors(), logger());
@@ -46,9 +47,9 @@ app.route("/api/v1/users", users);
 serve(
 	{
 		fetch: app.fetch,
-		port: 3000,
+		port: parseInt(process.env.APP_PORT || "3000"),
 	},
 	(info) => {
-		console.log(`Server is running on http://localhost:${info.port}`);
+		console.log(`Server is running on ${process.env.APP_URL}:${info.port}`);
 	},
 );

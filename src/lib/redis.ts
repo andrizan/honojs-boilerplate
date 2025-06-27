@@ -15,8 +15,15 @@ export const getRedis = (): Redis => {
 	return redisInstance;
 };
 
-export const redisSet = async (key: string, value: string): Promise<"OK"> => {
+export const redisSet = async (
+	key: string,
+	value: string,
+	ttlInSeconds?: number,
+): Promise<"OK"> => {
 	const redis = getRedis();
+	if (ttlInSeconds) {
+		return redis.set(key, value, "EX", ttlInSeconds);
+	}
 	return redis.set(key, value);
 };
 

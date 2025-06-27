@@ -94,6 +94,7 @@ export const googleAuthCallback = async (c: Context) => {
 	const saveRefreshToken = await redisSet(
 		`users:refresh_token:${refresh_token}`,
 		JSON.stringify(user),
+		2 * 60 * 60,
 	);
 	if (saveRefreshToken !== "OK") {
 		return c.json({ error: "Failed to save refresh token" }, 500);
@@ -161,6 +162,7 @@ export const signup = async (c: Context) => {
 	const saveRefreshToken = await redisSet(
 		`users:refresh_token:${refresh_token}`,
 		JSON.stringify(inserted),
+		2 * 60 * 60,
 	);
 
 	if (saveRefreshToken !== "OK") {
@@ -238,6 +240,7 @@ export const signin = async (c: Context) => {
 	const saveRefreshToken = await redisSet(
 		`users:refresh_token:${refresh_token}`,
 		JSON.stringify(user),
+		2 * 60 * 60,
 	);
 
 	if (saveRefreshToken !== "OK") {
@@ -289,6 +292,7 @@ export const getRefreshToken = async (c: Context) => {
 		const saveRefreshToken = await redisSet(
 			`users:refresh_token:${refresh_token}`,
 			JSON.stringify(user),
+			2 * 60 * 60,
 		);
 		if (saveRefreshToken !== "OK") {
 			return c.json({ error: "Failed to save refresh token" }, 500);

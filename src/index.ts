@@ -6,10 +6,12 @@ import { logger } from "hono/logger";
 import { checkDbConnection } from "./lib/db.js";
 import { getRedis } from "./lib/redis.js";
 import { auth, users } from "./routers/index.route.js";
-import { parse } from "node:path";
+import { validateJsonContentType } from "./middlewares/conten-type.js";
 
 const app = new Hono();
 app.use("*", cors(), logger());
+
+app.use("api/*", validateJsonContentType);
 
 app.get("/", (c) => {
 	return c.text("Hello Hono!");

@@ -11,7 +11,7 @@ export const users = pgTable(
 		provider: text("provider").notNull(),
 		role: text("role").default("user").notNull(),
 		refreshToken: text("refresh_token").notNull(),
-		createdAt: timestamp("created_at").defaultNow().notNull(),
+		createdAt: timestamp("created_at").notNull().defaultNow(),
 	},
 	(table) => [
 		index("idx_users_email").on(table.email),

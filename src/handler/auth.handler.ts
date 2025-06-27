@@ -1,11 +1,14 @@
 import { randomBytes } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { DrizzleError, eq } from "drizzle-orm";
 import type { Context } from "hono";
 import { sign } from "hono/jwt";
 import { users } from "../db/schema.js";
 import { db } from "../lib/db.js";
 import { redisDel, redisGet, redisSet } from "../lib/redis.js";
 import type { User } from "../types/users.js";
+import { userValidator } from "../utils/validator.js";
+import bcrypt from "bcryptjs";
+import type { DatabaseError } from "../types/db.js";
 
 export const googleAuthUrl = async (c: Context) => {
 	const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? "";
@@ -109,10 +112,88 @@ export const googleAuthCallback = async (c: Context) => {
 
 	return c.json(
 		{
-			access_token: jwtToken,
-			refresh_token: refresh_token,
+			data: {
+				access_token: jwtToken,
+				refresh_token: refresh_token,
+			},
 		},
 		200,
+	);
+};
+
+export const signup = async (c: Context) => {
+	const req = await c.req.json();
+
+	if (!req) {
+		return c.json({ error: "Request body is required" }, 400);
+	}
+
+	const validate = await userValidator.safeParseAsync(req);
+	if (!validate.success) {
+		return c.json(
+			{
+				error: "Invalid request data",
+				details: JSON.parse(validate.error.message),
+			},
+			400,
+		);
+	}
+
+	const passHash = await bcrypt.hash(validate.data.password, 10);
+	const refresh_token = randomBytes(64).toString("hex");
+	let inserted: User | undefined;
+	try {
+		const result = await db
+			.insert(users)
+			.values({
+				email: validate.data.email,
+				name: validate.data.name,
+				password: passHash,
+				provider: validate.data.provider,
+				role: validate.data.role,
+				refreshToken: refresh_token,
+			})
+			.returning();
+		inserted = result[0];
+	} catch (err) {
+		const dbErr = err as DatabaseError;
+		return c.json({
+			error: dbErr.cause.detail,
+		});
+	}
+
+	const saveRefreshToken = await redisSet(
+		`users:refresh_token:${refresh_token}`,
+		JSON.stringify(inserted),
+	);
+
+	if (saveRefreshToken !== "OK") {
+		return c.json({ error: "Failed to save refresh token" }, 500);
+	}
+
+	if (!inserted) {
+		return c.json({ error: "User insertion failed" }, 500);
+	}
+
+	const jwtToken = await sign(
+		{
+			id: inserted.id,
+			email: inserted.email,
+			role: inserted.role,
+			exp: Math.floor(Date.now() / 1000) + 60 * 15,
+		},
+		process.env.JWT_SECRET_KEY ?? "",
+	);
+
+	return c.json(
+		{
+			message: "User created successfully",
+			data: {
+				access_token: jwtToken,
+				refresh_token: inserted.refreshToken,
+			},
+		},
+		201,
 	);
 };
 
@@ -136,7 +217,7 @@ export const getRefreshToken = async (c: Context) => {
 		return c.json({ error: "refresh_token invalid" }, 401);
 	}
 
-	if (!cached){
+	if (!cached) {
 		const saveRefreshToken = await redisSet(
 			`users:refresh_token:${refresh_token}`,
 			JSON.stringify(user),
@@ -157,9 +238,11 @@ export const getRefreshToken = async (c: Context) => {
 	);
 
 	return c.json({
-		access_token: jwtToken,
-		token_type: "Bearer",
-		expires_in: 900, // 15 menit (900 detik)
+		data: {
+			access_token: jwtToken,
+			token_type: "Bearer",
+			expires_in: 900, // 15 menit (900 detik)
+		},
 	});
 };
 

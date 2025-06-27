@@ -5,7 +5,9 @@
 		"dev": "tsx watch src/index.ts",
 		"build": "tsc",
 		"start": "node dist/index.js",
-		"db:push": "npx drizzle-kit generate && npx drizzle-kit push"
+		"db:push": "npx drizzle-kit generate && npx drizzle-kit push",
+		"lint": "biome lint",
+		"fix": "biome format --write"
 	},
 	"dependencies": {
 		"@hono/node-server": "^1.14.4",
@@ -14,7 +16,8 @@
 		"drizzle-orm": "^0.44.2",
 		"hono": "^4.7.11",
 		"ioredis": "^5.6.1",
-		"pg": "^8.16.1"
+		"pg": "^8.16.1",
+		"zod": "^3.25.67"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.0.0",

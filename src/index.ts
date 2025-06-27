@@ -7,9 +7,10 @@ import { checkDbConnection } from "./lib/db.js";
 import { getRedis } from "./lib/redis.js";
 import { auth, users } from "./routers/index.route.js";
 import { validateJsonContentType } from "./middlewares/conten-type.js";
+import { rateLimit } from "./middlewares/rate-limit.js";
 
 const app = new Hono();
-app.use("*", cors(), logger());
+app.use("*", cors(), logger(), rateLimit({ windowSec: 60, max: 10 }));
 
 app.use("api/*", validateJsonContentType);
 

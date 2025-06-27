@@ -29,3 +29,8 @@ export const redisDel = async (key: string): Promise<number> => {
 	const redis = getRedis();
 	return redis.del(key);
 };
+
+export const redisIncr = async (key: string): Promise<number> => {
+	const redis = getRedis();
+	return redis.incr(key);
+};

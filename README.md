@@ -240,8 +240,6 @@ curl -X POST http://localhost:3000/api/auth/sign-up/email \
 
 Check your email for verification link!
 
-See [FINAL_AUTH.md](./FINAL_AUTH.md) for complete authentication flow.
-
 ## 📚 API Endpoints
 
 ### Health Check
@@ -276,8 +274,6 @@ GET  /api/auth/get-session            # Get current session
 POST /api/auth/sign-out               # Sign out
 ```
 
-**See [BETTER_AUTH_ENDPOINTS.md](./BETTER_AUTH_ENDPOINTS.md) for detailed documentation**
-
 ### User Management
 
 ```bash
@@ -291,8 +287,6 @@ GET    /api/users/:id                 # Get user by ID (UUID)
 PATCH  /api/users/:id                 # Update user (UUID)
 DELETE /api/users/:id                 # Delete user (UUID)
 ```
-
-**See [AVATAR_UPLOAD.md](./AVATAR_UPLOAD.md) for avatar upload documentation**
 
 ### Blog Management (Example Feature)
 
@@ -707,27 +701,27 @@ relaxedUserRateLimit()
 
 ```typescript
 // User router
-userRouter.get("/profile", 
-  betterAuthMiddleware, 
+userRouter.get("/profile",
+  betterAuthMiddleware,
   relaxedUserRateLimit(),     // 60 req/min per user
   getUserProfile
 );
 
-userRouter.post("/avatar", 
-  betterAuthMiddleware, 
+userRouter.post("/avatar",
+  betterAuthMiddleware,
   strictUserRateLimit(),      // 5 req/min per user
   uploadAvatar
 );
 
 // Blog router
-blogRouter.post("/", 
-  betterAuthMiddleware, 
+blogRouter.post("/",
+  betterAuthMiddleware,
   strictUserRateLimit(),      // Prevent spam
   createBlog
 );
 
-blogRouter.get("/my/blogs", 
-  betterAuthMiddleware, 
+blogRouter.get("/my/blogs",
+  betterAuthMiddleware,
   relaxedUserRateLimit(),     // Read-heavy
   getMyBlogs
 );
@@ -810,7 +804,7 @@ export const premiumUserRateLimit = () =>
 
 **Per-endpoint custom limits:**
 ```typescript
-blogRouter.post("/import", 
+blogRouter.post("/import",
   betterAuthMiddleware,
   userRateLimit({ windowMs: 60000, limit: 1 }),  // Once per minute
   importBlogs
@@ -870,13 +864,6 @@ blogRouter.post("/import",
 - **Pino** - Structured logging
 - **tsx** - TypeScript execution
 - **Drizzle Kit** - Database migrations and Studio GUI
-
-## 📖 Documentation
-
-- [FINAL_AUTH.md](./FINAL_AUTH.md) - Complete authentication guide
-- [BETTER_AUTH_ENDPOINTS.md](./BETTER_AUTH_ENDPOINTS.md) - API endpoint reference
-- [AVATAR_UPLOAD.md](./AVATAR_UPLOAD.md) - Avatar upload documentation
-- [STORAGE.md](./STORAGE.md) - S3 storage configuration
 
 ## 🧪 Testing
 

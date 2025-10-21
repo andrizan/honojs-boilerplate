@@ -771,11 +771,11 @@ export const relaxedUserRateLimit = () =>
 
 ### Benefits
 
-✅ **Fair limits per user** - Not affected by shared IPs
-✅ **Prevents abuse** - User can't bypass by reconnecting
-✅ **Flexible tiers** - Different limits for different operations
-✅ **Observable** - Track per-user usage in Redis
-✅ **Production-ready** - Handles CGNAT, proxy, VPN scenarios
+- ✅ **Fair limits per user** - Not affected by shared IPs
+- ✅ **Prevents abuse** - User can't bypass by reconnecting
+- ✅ **Flexible tiers** - Different limits for different operations
+- ✅ **Observable** - Track per-user usage in Redis
+- ✅ **Production-ready** - Handles CGNAT, proxy, VPN scenarios
 
 ### Monitoring
 
@@ -961,16 +961,6 @@ REDIS_PASSWORD=<strong-redis-password>
 - ✅ Configure rate limiting for your traffic
 - ✅ Test UUID generation performance under load
 
-## 🤝 Contributing
-
-Contributions are welcome! Please follow these guidelines:
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests and linting
-5. Submit a pull request
-
 ## 🐛 Troubleshooting
 
 ### Email verification not working
@@ -996,4 +986,4 @@ Contributions are welcome! Please follow these guidelines:
 
 ## 📄 License
 
-This project is licensed under the MIT License.
+This project is licensed under the [MIT License](/LICENSE).

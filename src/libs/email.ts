@@ -1,0 +1,236 @@
+import nodemailer from "nodemailer";
+import type { Transporter } from "nodemailer";
+import { env } from "../infrastructure/env.js";
+import { logger } from "../shared/logger.js";
+
+let transporter: Transporter | null = null;
+
+function getTransporter(): Transporter {
+	if (transporter) {
+		return transporter;
+	}
+
+	transporter = nodemailer.createTransport({
+		host: env.SMTP_HOST,
+		port: env.SMTP_PORT,
+		secure: env.SMTP_SECURE,
+		auth:
+			env.SMTP_USER && env.SMTP_PASS
+				? {
+						user: env.SMTP_USER,
+						pass: env.SMTP_PASS,
+					}
+				: undefined,
+	});
+
+	return transporter;
+}
+
+export async function sendEmail({
+	to,
+	subject,
+	html,
+	text,
+}: {
+	to: string;
+	subject: string;
+	html?: string;
+	text?: string;
+}) {
+	try {
+		const transport = getTransporter();
+
+		const info = await transport.sendMail({
+			from: env.SMTP_FROM,
+			to,
+			subject,
+			html,
+			text,
+		});
+
+		logger.info({ messageId: info.messageId, to }, "Email sent successfully");
+		return { success: true, messageId: info.messageId };
+	} catch (error) {
+		logger.error({ error, to, subject }, "Failed to send email");
+		throw error;
+	}
+}
+
+export async function sendVerificationEmail(
+	email: string,
+	verificationUrl: string,
+) {
+	const subject = "Verify Your Email Address";
+	const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Email Verification</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f4; padding: 20px;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+          <tr>
+            <td style="background-color: #4F46E5; padding: 40px 20px; text-align: center;">
+              <h1 style="color: #ffffff; margin: 0; font-size: 28px;">Verify Your Email</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 40px 30px;">
+              <p style="color: #333333; font-size: 16px; line-height: 1.6; margin: 0 0 20px 0;">
+                Thank you for signing up! Please verify your email address to complete your registration.
+              </p>
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" style="padding: 20px 0;">
+                    <a href="${verificationUrl}" 
+                       style="background-color: #4F46E5; color: #ffffff; padding: 14px 40px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px; display: inline-block;">
+                      Verify Email
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <p style="color: #666666; font-size: 14px; line-height: 1.6; margin: 30px 0 0 0;">
+                Or copy and paste this link into your browser:
+              </p>
+              <p style="color: #4F46E5; font-size: 14px; word-break: break-all; margin: 10px 0 0 0;">
+                ${verificationUrl}
+              </p>
+              <hr style="border: none; border-top: 1px solid #eeeeee; margin: 30px 0;">
+              <p style="color: #999999; font-size: 12px; line-height: 1.6; margin: 0;">
+                If you didn't create an account, you can safely ignore this email.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color: #f9f9f9; padding: 20px 30px; text-align: center; border-top: 1px solid #eeeeee;">
+              <p style="color: #999999; font-size: 12px; margin: 0;">
+                This is an automated message, please do not reply.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+	`;
+
+	const text = `
+Verify Your Email Address
+
+Thank you for signing up! Please verify your email address to complete your registration.
+
+Click the link below to verify your email:
+${verificationUrl}
+
+If you didn't create an account, you can safely ignore this email.
+	`;
+
+	return sendEmail({ to: email, subject, html, text });
+}
+
+export async function sendPasswordResetEmail(email: string, resetUrl: string) {
+	const subject = "Reset Your Password";
+	const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Password Reset</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f4; padding: 20px;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+          <tr>
+            <td style="background-color: #DC2626; padding: 40px 20px; text-align: center;">
+              <h1 style="color: #ffffff; margin: 0; font-size: 28px;">Password Reset</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 40px 30px;">
+              <p style="color: #333333; font-size: 16px; line-height: 1.6; margin: 0 0 20px 0;">
+                We received a request to reset your password. Click the button below to create a new password.
+              </p>
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" style="padding: 20px 0;">
+                    <a href="${resetUrl}" 
+                       style="background-color: #DC2626; color: #ffffff; padding: 14px 40px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px; display: inline-block;">
+                      Reset Password
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <p style="color: #666666; font-size: 14px; line-height: 1.6; margin: 30px 0 0 0;">
+                Or copy and paste this link into your browser:
+              </p>
+              <p style="color: #DC2626; font-size: 14px; word-break: break-all; margin: 10px 0 0 0;">
+                ${resetUrl}
+              </p>
+              <hr style="border: none; border-top: 1px solid #eeeeee; margin: 30px 0;">
+              <p style="color: #999999; font-size: 12px; line-height: 1.6; margin: 0 0 10px 0;">
+                <strong>Security Tips:</strong>
+              </p>
+              <ul style="color: #999999; font-size: 12px; line-height: 1.6; margin: 0; padding-left: 20px;">
+                <li>This link will expire in 1 hour</li>
+                <li>If you didn't request this, please ignore this email</li>
+                <li>Never share your password with anyone</li>
+              </ul>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color: #f9f9f9; padding: 20px 30px; text-align: center; border-top: 1px solid #eeeeee;">
+              <p style="color: #999999; font-size: 12px; margin: 0;">
+                This is an automated message, please do not reply.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+	`;
+
+	const text = `
+Reset Your Password
+
+We received a request to reset your password. Click the link below to create a new password:
+${resetUrl}
+
+Security Tips:
+- This link will expire in 1 hour
+- If you didn't request this, please ignore this email
+- Never share your password with anyone
+	`;
+
+	return sendEmail({ to: email, subject, html, text });
+}
+
+export async function verifySmtpConnection(): Promise<{
+	status: string;
+	error: string | null;
+}> {
+	try {
+		const transport = getTransporter();
+		await transport.verify();
+		logger.info("SMTP connection verified successfully");
+		return { status: "connected", error: null };
+	} catch (error) {
+		logger.error({ error }, "SMTP connection verification failed");
+		return {
+			status: "error",
+			error: error instanceof Error ? error.message : "Unknown error",
+		};
+	}
+}

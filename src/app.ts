@@ -14,6 +14,7 @@ import {
 	getDbPoolStats,
 	verifySmtpConnection,
 } from "./infrastructure/index.js";
+import { startWorkers, stopWorkers } from "./jobs/workers/index.js";
 import { auth } from "./libs/auth.js";
 import { userRouter, blogRouter } from "./modules/index.js";
 import { logger as pinoLogger } from "./shared/logger.js";
@@ -87,12 +88,14 @@ serve(
 	},
 	(info) => {
 		pinoLogger.info(`Server is running on ${env.APP_URL}:${info.port}`);
+		startWorkers();
 	},
 );
 
 const shutdown = async () => {
 	pinoLogger.info("Shutting down gracefully...");
 	try {
+		await stopWorkers();
 		await closeAllQueues();
 		closeS3Client();
 		await closeRedisConnection();

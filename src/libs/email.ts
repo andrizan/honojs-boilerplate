@@ -2,6 +2,11 @@ import nodemailer from "nodemailer";
 import type { Transporter } from "nodemailer";
 import { env } from "../infrastructure/env.js";
 import { logger } from "../shared/logger.js";
+import {
+	addEmailJob,
+	addVerificationEmailJob,
+	addPasswordResetEmailJob,
+} from "../jobs/queues/email.queue.js";
 
 let transporter: Transporter | null = null;
 
@@ -26,7 +31,11 @@ function getTransporter(): Transporter {
 	return transporter;
 }
 
-export async function sendEmail({
+/**
+ * Internal function to actually send email via SMTP
+ * Called by email worker, not directly by application code
+ */
+export async function sendEmailDirect({
 	to,
 	subject,
 	html,
@@ -37,31 +46,25 @@ export async function sendEmail({
 	html?: string;
 	text?: string;
 }) {
-	try {
-		const transport = getTransporter();
+	const transport = getTransporter();
 
-		const info = await transport.sendMail({
-			from: env.SMTP_FROM,
-			to,
-			subject,
-			html,
-			text,
-		});
+	const info = await transport.sendMail({
+		from: env.SMTP_FROM,
+		to,
+		subject,
+		html,
+		text,
+	});
 
-		logger.info({ messageId: info.messageId, to }, "Email sent successfully");
-		return { success: true, messageId: info.messageId };
-	} catch (error) {
-		logger.error({ error, to, subject }, "Failed to send email");
-		throw error;
-	}
+	logger.info({ messageId: info.messageId, to, subject }, "Email sent successfully");
+	return { success: true, messageId: info.messageId };
 }
 
-export async function sendVerificationEmail(
-	email: string,
-	verificationUrl: string,
-) {
-	const subject = "Verify Your Email Address";
-	const html = `
+/**
+ * Generate verification email HTML template
+ */
+export function generateVerificationEmailHtml(verificationUrl: string): string {
+	return `
 <!DOCTYPE html>
 <html>
 <head>
@@ -120,24 +123,13 @@ export async function sendVerificationEmail(
 </body>
 </html>
 	`;
-
-	const text = `
-Verify Your Email Address
-
-Thank you for signing up! Please verify your email address to complete your registration.
-
-Click the link below to verify your email:
-${verificationUrl}
-
-If you didn't create an account, you can safely ignore this email.
-	`;
-
-	return sendEmail({ to: email, subject, html, text });
 }
 
-export async function sendPasswordResetEmail(email: string, resetUrl: string) {
-	const subject = "Reset Your Password";
-	const html = `
+/**
+ * Generate password reset email HTML template
+ */
+export function generatePasswordResetEmailHtml(resetUrl: string): string {
+	return `
 <!DOCTYPE html>
 <html>
 <head>
@@ -201,20 +193,68 @@ export async function sendPasswordResetEmail(email: string, resetUrl: string) {
 </body>
 </html>
 	`;
+}
 
-	const text = `
-Reset Your Password
+/**
+ * Queue an email to be sent asynchronously
+ * Email will be sent by the email worker with retry logic
+ */
+export async function sendEmail({
+	to,
+	subject,
+	html,
+	text,
+}: {
+	to: string;
+	subject: string;
+	html?: string;
+	text?: string;
+}) {
+	try {
+		const job = await addEmailJob({ to, subject, html, text });
+		logger.info({ jobId: job.id, to, subject }, "Email queued successfully");
+		return { success: true, jobId: job.id };
+	} catch (error) {
+		logger.error({ error, to, subject }, "Failed to queue email");
+		throw error;
+	}
+}
 
-We received a request to reset your password. Click the link below to create a new password:
-${resetUrl}
+/**
+ * Queue verification email with higher priority
+ */
+export async function sendVerificationEmail(
+	email: string,
+	verificationUrl: string,
+) {
+	try {
+		const job = await addVerificationEmailJob({
+			to: email,
+			verificationUrl,
+		});
+		logger.info({ jobId: job.id, to: email }, "Verification email queued successfully");
+		return { success: true, jobId: job.id };
+	} catch (error) {
+		logger.error({ error, to: email }, "Failed to queue verification email");
+		throw error;
+	}
+}
 
-Security Tips:
-- This link will expire in 1 hour
-- If you didn't request this, please ignore this email
-- Never share your password with anyone
-	`;
-
-	return sendEmail({ to: email, subject, html, text });
+/**
+ * Queue password reset email with higher priority
+ */
+export async function sendPasswordResetEmail(email: string, resetUrl: string) {
+	try {
+		const job = await addPasswordResetEmailJob({
+			to: email,
+			resetUrl,
+		});
+		logger.info({ jobId: job.id, to: email }, "Password reset email queued successfully");
+		return { success: true, jobId: job.id };
+	} catch (error) {
+		logger.error({ error, to: email }, "Failed to queue password reset email");
+		throw error;
+	}
 }
 
 export async function verifySmtpConnection(): Promise<{

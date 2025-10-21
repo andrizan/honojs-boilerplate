@@ -11,14 +11,15 @@ A production-ready boilerplate for building APIs with Hono.js, featuring modular
 - **OAuth Providers** - Google, Facebook, Discord
 - **Avatar Upload** - AWS S3 integration with validation
 - **Email System** - Beautiful HTML emails with Nodemailer
-- **Drizzle ORM** - Type-safe database queries
-- **PostgreSQL** - Relational database
-- **Redis** - Caching and rate limiting
+- **Drizzle ORM** - Type-safe database queries with UUID v7 primary keys
+- **PostgreSQL** - Relational database with optimized UUID indexing
+- **Redis** - Caching and rate limiting storage
 - **AWS S3** - File storage for avatars
-- **Rate Limiting** - Redis-backed protection
-- **Job Queue** - Background processing with BullMQ
+- **Dual Rate Limiting** - IP-based (global) + User-based (authenticated, CGNAT-friendly)
+- **Job Queue** - Background processing with BullMQ for reliable email delivery
 - **Pino Logger** - Structured logging
 - **Biome** - Fast linter and formatter
+- **Modular Architecture** - Clean separation of concerns with layered design
 
 ## 📁 Project Structure
 
@@ -41,8 +42,11 @@ src/
 │   └── index.ts                        → Module exports
 │
 ├── jobs/                               → Background jobs
-│   ├── queues/                         → Job queue definitions
-│   └── workers/                        → Job processors
+│   ├── queues/
+│   │   └── email.queue.ts              → Email queue (BullMQ) with retry logic
+│   └── workers/
+│       ├── email.worker.ts             → Email worker (processes jobs)
+│       └── index.ts                    → Worker lifecycle management
 │
 ├── shared/                             → Shared resources
 │   ├── middlewares/
@@ -50,7 +54,8 @@ src/
 │   │   ├── role.middleware.ts          → Role-based access control
 │   │   ├── error.middleware.ts         → Global error handler
 │   │   ├── content-type.middleware.ts  → Content-type validation
-│   │   └── rate-limit.middleware.ts    → Rate limiting
+│   │   ├── rate-limit.middleware.ts    → IP-based rate limiting (global)
+│   │   └── user-rate-limit.middleware.ts → User-based rate limiting (authenticated)
 │   │
 │   ├── logger.ts                       → Pino logger setup
 │   └── response.ts                     → Standardized API responses
@@ -62,10 +67,10 @@ src/
 └── infrastructure/                     → Infrastructure setup
     ├── env.ts                          → Environment variables
     ├── db.ts                           → Database connection (Drizzle)
+    ├── schema.ts                       → Database schema (Better Auth + custom tables)
     ├── redis.ts                        → Redis connection
     ├── s3.ts                           → AWS S3 client
     ├── queue.ts                        → BullMQ setup
-    ├── auth-schema.ts                  → Better Auth database schema
     └── index.ts                        → Infrastructure exports
 ```
 
@@ -147,8 +152,9 @@ pnpm build            # Compile TypeScript to JavaScript
 pnpm start            # Run production build
 
 # Database
-pnpm db:generate      # Generate migrations
-pnpm db:migrate       # Run migrations
+pnpm db:generate      # Generate migrations from schema
+pnpm db:migrate       # Apply migrations to database (drizzle-kit CLI)
+pnpm db:push          # Push schema directly without migrations (dev only)
 pnpm db:studio        # Open Drizzle Studio (DB GUI)
 
 # Code Quality
@@ -187,14 +193,24 @@ cp .env.example .env
 
 ### 3. Setup Database
 
+**Option A: Quick Push (Development)**
 ```bash
-# Push schema to database
+# Push schema directly to database (no migration files)
 pnpm db:push
+```
 
-# Or generate and run migrations
+**Option B: Versioned Migrations (Production)**
+```bash
+# Generate migration files from schema
 pnpm db:generate
+
+# Review generated SQL in drizzle/ folder
+
+# Apply migrations to database
 pnpm db:migrate
 ```
+
+**Note:** All tables use UUID v7 for primary keys - automatically generated on insert.
 
 ### 4. Start Development Server
 
@@ -271,12 +287,29 @@ DELETE /api/users/avatar              # Delete avatar
 
 # Admin only
 GET    /api/users                     # Get all users (paginated)
-GET    /api/users/:id                 # Get user by ID
-PATCH  /api/users/:id                 # Update user
-DELETE /api/users/:id                 # Delete user
+GET    /api/users/:id                 # Get user by ID (UUID)
+PATCH  /api/users/:id                 # Update user (UUID)
+DELETE /api/users/:id                 # Delete user (UUID)
 ```
 
 **See [AVATAR_UPLOAD.md](./AVATAR_UPLOAD.md) for avatar upload documentation**
+
+### Blog Management (Example Feature)
+
+```bash
+# Public endpoints
+GET    /api/blogs                     # Get all published blogs (paginated)
+GET    /api/blogs/:id                 # Get blog by ID (UUID)
+GET    /api/blogs/slug/:slug          # Get blog by slug
+
+# Authenticated endpoints
+POST   /api/blogs                     # Create blog (requires auth)
+GET    /api/blogs/my/blogs            # Get current user's blogs
+PATCH  /api/blogs/:id                 # Update blog (UUID, author only)
+DELETE /api/blogs/:id                 # Delete blog (UUID, author only)
+```
+
+**Note:** All IDs in the API are UUIDs (v7 format), not integers.
 
 ## 🏗️ Architecture
 
@@ -301,6 +334,489 @@ Each feature is organized as a **module** with its own:
 
 Example: `user` module handles user profile, avatar, and admin operations.
 
+## 🗄️ Database Architecture
+
+### Schema Design
+
+This project uses **PostgreSQL** with **Drizzle ORM** and follows these conventions:
+
+#### Primary Keys: UUID v7
+All tables use **UUID v7** as primary keys for:
+- ✅ **Time-ordered sortability** - UUIDs are chronologically sortable
+- ✅ **Global uniqueness** - No collision risk across distributed systems
+- ✅ **Security** - Non-predictable IDs (vs auto-increment)
+- ✅ **Better Auth compatibility** - Library expects string IDs
+- ✅ **Better indexing** - Time-ordered insertion improves B-tree performance
+
+```typescript
+import { uuid } from "drizzle-orm/pg-core";
+import { v7 as uuidv7 } from "uuid";
+
+id: uuid("id").primaryKey().$defaultFn(() => uuidv7())
+```
+
+**Why UUID v7 over other options?**
+- vs **Auto-increment (serial)**: No collision in distributed systems, better security
+- vs **UUID v4**: Sortable by creation time, better index performance
+- vs **CUID/nanoid**: Native PostgreSQL UUID type, 16 bytes vs 25+ chars
+
+### Database Tables
+
+#### Better Auth Tables
+Required tables for authentication (managed by Better Auth):
+
+```sql
+user
+  - id: uuid (PK)
+  - name: text
+  - email: text (unique)
+  - emailVerified: boolean
+  - image: text
+  - role: text (default: 'user')
+  - createdAt: timestamp
+  - updatedAt: timestamp
+
+session
+  - id: uuid (PK)
+  - userId: uuid (FK -> user.id)
+  - expiresAt: timestamp
+  - token: text (unique)
+  - ipAddress: text
+  - userAgent: text
+  - createdAt: timestamp
+  - updatedAt: timestamp
+
+account
+  - id: uuid (PK)
+  - userId: uuid (FK -> user.id)
+  - accountId: text
+  - providerId: text (google, facebook, discord)
+  - accessToken: text
+  - refreshToken: text
+  - idToken: text
+  - accessTokenExpiresAt: timestamp
+  - refreshTokenExpiresAt: timestamp
+  - scope: text
+  - password: text (for email/password auth)
+  - createdAt: timestamp
+  - updatedAt: timestamp
+
+verification
+  - id: uuid (PK)
+  - identifier: text (email)
+  - value: text (token)
+  - expiresAt: timestamp
+  - createdAt: timestamp
+  - updatedAt: timestamp
+```
+
+#### Custom Application Tables
+
+```sql
+blogs (example custom table)
+  - id: uuid (PK)
+  - authorId: uuid (FK -> user.id)
+  - title: text
+  - slug: text (unique)
+  - content: text
+  - excerpt: text
+  - coverImage: text
+  - published: boolean
+  - publishedAt: timestamp
+  - createdAt: timestamp
+  - updatedAt: timestamp
+```
+
+### Migration Workflow
+
+This project uses **Drizzle Kit CLI** for migrations (no custom migrate.ts script):
+
+```bash
+# 1. Make schema changes in src/infrastructure/schema.ts
+
+# 2. Generate migration files
+pnpm db:generate
+
+# 3. Review generated SQL in drizzle/ folder
+
+# 4. Apply migrations to database
+pnpm db:migrate
+
+# Alternative: Push schema directly (dev only, no migration files)
+pnpm db:push
+```
+
+**Development vs Production:**
+- **Development**: Use `pnpm db:push` for quick prototyping (no migration history)
+- **Production**: Always use `pnpm db:generate` + `pnpm db:migrate` for versioned migrations
+
+### Database Configuration
+
+Located in `src/infrastructure/db.ts`:
+
+```typescript
+// Connection pool with full configuration
+const poolConfig: PoolConfig = {
+  connectionString: env.DATABASE_URL,
+  min: env.DATABASE_POOL_MIN,           // Minimum connections
+  max: env.DATABASE_POOL_MAX,           // Maximum connections
+  idleTimeoutMillis: env.DATABASE_IDLE_TIMEOUT,
+  connectionTimeoutMillis: env.DATABASE_CONNECTION_TIMEOUT,
+  statement_timeout: env.DATABASE_STATEMENT_TIMEOUT,
+  allowExitOnIdle: env.DATABASE_ALLOW_EXIT_ON_IDLE,
+};
+
+// Drizzle instance with schema
+export const db = drizzle(pool, { schema });
+
+// Health check utility
+export const checkDbConnection = async () => { /* ... */ }
+
+// Pool statistics
+export const getDbPoolStats = () => { /* ... */ }
+
+// Graceful shutdown
+export const closeDbPool = async () => { /* ... */ }
+```
+
+**Environment variables for database:**
+```env
+DATABASE_URL=postgresql://user:password@localhost:5432/dbname
+DATABASE_POOL_MIN=2
+DATABASE_POOL_MAX=10
+DATABASE_IDLE_TIMEOUT=30000
+DATABASE_CONNECTION_TIMEOUT=5000
+DATABASE_STATEMENT_TIMEOUT=30000
+DATABASE_ALLOW_EXIT_ON_IDLE=false
+DATABASE_ENABLE_LOGGING=false
+```
+
+### Drizzle Studio
+
+Visual database browser built-in:
+
+```bash
+pnpm db:studio
+```
+
+Opens at `https://local.drizzle.studio` - browse tables, run queries, inspect data.
+
+## 📧 Email Queue System
+
+All emails are sent through a **reliable queue-based system** to ensure delivery and prevent blocking.
+
+### Architecture
+
+```
+Application → Email Queue (BullMQ) → Email Worker → SMTP Server → Recipient
+                    ↓
+                Redis (Queue Storage)
+```
+
+**Benefits:**
+- ✅ **Non-blocking** - API responses instant, emails sent async
+- ✅ **Reliable** - 3 retries with exponential backoff
+- ✅ **Scalable** - Worker concurrency (5 emails at once)
+- ✅ **Observable** - Job tracking with unique IDs
+- ✅ **Persistent** - Failed jobs kept for debugging
+
+### Email Flow
+
+```typescript
+// In application code (e.g., Better Auth callback)
+import { sendVerificationEmail } from "./libs/email.js";
+
+// This queues the email and returns immediately
+await sendVerificationEmail(user.email, verificationUrl);
+// → Returns: { success: true, jobId: "job_123xyz" }
+
+// Worker processes job asynchronously
+// → Retries on failure (3 attempts)
+// → Logs success/failure
+```
+
+### Queue Configuration
+
+Located in `src/jobs/queues/email.queue.ts`:
+
+```typescript
+defaultJobOptions: {
+  attempts: 3,                        // Retry 3 times
+  backoff: {
+    type: "exponential",              // 2s, 4s, 8s delays
+    delay: 2000,
+  },
+  priority: 2,                        // Higher for verification/reset
+  removeOnComplete: { count: 100 },   // Keep last 100 successful
+  removeOnFail: { count: 500 },       // Keep last 500 failed
+}
+```
+
+### Worker Configuration
+
+Located in `src/jobs/workers/email.worker.ts`:
+
+```typescript
+{
+  connection: getRedis(),             // Redis connection
+  concurrency: 5,                     // Process 5 jobs simultaneously
+  removeOnComplete: { count: 100 },
+  removeOnFail: { count: 500 },
+}
+```
+
+### Email Types
+
+**1. Generic Email**
+```typescript
+await sendEmail({
+  to: "user@example.com",
+  subject: "Welcome",
+  html: "<h1>Welcome!</h1>",
+  text: "Welcome!",
+});
+```
+
+**2. Verification Email (Priority)**
+```typescript
+await sendVerificationEmail(
+  "user@example.com",
+  "https://yourapp.com/verify?token=abc123"
+);
+```
+
+**3. Password Reset Email (Priority)**
+```typescript
+await sendPasswordResetEmail(
+  "user@example.com",
+  "https://yourapp.com/reset?token=xyz789"
+);
+```
+
+### Email Templates
+
+All HTML templates centralized in `src/libs/email.ts`:
+- `generateVerificationEmailHtml(url)` - Beautiful responsive verification email
+- `generatePasswordResetEmailHtml(url)` - Responsive reset email with security tips
+
+**No duplication** - Worker imports and uses these templates.
+
+### Monitoring
+
+Check queue status via BullMQ Board or Redis:
+
+```bash
+# Redis CLI - check queue length
+redis-cli LLEN bull:email:waiting
+redis-cli LLEN bull:email:active
+redis-cli LLEN bull:email:failed
+
+# Application logs (Pino)
+# → "Email queued successfully" (when job added)
+# → "Email job processed successfully" (when sent)
+# → "Email job failed" (on failure after retries)
+```
+
+### Troubleshooting
+
+**Emails not being sent:**
+1. Check Redis is running: `pnpm dev` (worker starts with app)
+2. Check SMTP credentials in `.env`
+3. Check worker logs for errors
+4. Inspect failed jobs in Redis
+
+**Worker not starting:**
+- Worker automatically starts with `pnpm dev`
+- Check logs: "Starting all workers..." → "Email worker started"
+- Verify Redis connection in health check endpoint
+
+**Too many retries:**
+- Adjust `attempts` in `email.queue.ts`
+- Check SMTP timeout settings
+- Consider using a queue monitoring tool
+
+## 🛡️ Rate Limiting Strategy
+
+This boilerplate implements **dual rate limiting** to handle both anonymous and authenticated traffic:
+
+### Why User-Based Rate Limiting?
+
+In regions like **Indonesia**, IPv4 exhaustion causes carrier-grade NAT (CGNAT), meaning:
+- ❌ Thousands of users share the same public IP
+- ❌ IP-based rate limiting blocks legitimate users
+- ✅ **Solution**: Rate limit per authenticated user ID
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                     REQUEST                              │
+└───────────────────┬─────────────────────────────────────┘
+                    │
+         ┌──────────▼──────────┐
+         │  Authenticated?     │
+         └──────┬──────┬───────┘
+                │      │
+        YES ────┘      └──── NO
+         │                    │
+         │                    │
+    ┌────▼─────────┐    ┌────▼──────────┐
+    │ User-Based   │    │  IP-Based     │
+    │ Rate Limit   │    │  Rate Limit   │
+    │ (per user.id)│    │  (per IP)     │
+    └──────────────┘    └───────────────┘
+         │                    │
+         └──────────┬─────────┘
+                    │
+              ┌─────▼──────┐
+              │   Redis    │
+              │   Store    │
+              └────────────┘
+```
+
+### Implementation
+
+**1. Global IP-Based Rate Limit** (applied to all routes in app.ts):
+```typescript
+app.use("*", rateLimit({ windowMs: 60 * 1000, limit: 100 }));
+// → 100 requests per minute per IP
+// → For unauthenticated traffic
+```
+
+**2. User-Based Rate Limit** (applied to authenticated routes):
+
+**Strict** (5 req/min) - Sensitive operations:
+```typescript
+// Avatar upload/delete, password reset
+strictUserRateLimit()
+```
+
+**Standard** (30 req/min) - Normal operations:
+```typescript
+// CRUD operations, admin actions
+standardUserRateLimit()
+```
+
+**Relaxed** (60 req/min) - Read-heavy operations:
+```typescript
+// Profile viewing, listing data
+relaxedUserRateLimit()
+```
+
+### Usage Examples
+
+```typescript
+// User router
+userRouter.get("/profile", 
+  betterAuthMiddleware, 
+  relaxedUserRateLimit(),     // 60 req/min per user
+  getUserProfile
+);
+
+userRouter.post("/avatar", 
+  betterAuthMiddleware, 
+  strictUserRateLimit(),      // 5 req/min per user
+  uploadAvatar
+);
+
+// Blog router
+blogRouter.post("/", 
+  betterAuthMiddleware, 
+  strictUserRateLimit(),      // Prevent spam
+  createBlog
+);
+
+blogRouter.get("/my/blogs", 
+  betterAuthMiddleware, 
+  relaxedUserRateLimit(),     // Read-heavy
+  getMyBlogs
+);
+```
+
+### Configuration
+
+Located in `src/shared/middlewares/user-rate-limit.middleware.ts`:
+
+```typescript
+export const strictUserRateLimit = () =>
+  userRateLimit({
+    windowMs: 60 * 1000,  // 1 minute
+    limit: 5,              // 5 requests per minute
+  });
+
+export const standardUserRateLimit = () =>
+  userRateLimit({
+    windowMs: 60 * 1000,  // 1 minute
+    limit: 30,             // 30 requests per minute
+  });
+
+export const relaxedUserRateLimit = () =>
+  userRateLimit({
+    windowMs: 60 * 1000,  // 1 minute
+    limit: 60,             // 60 requests per minute
+  });
+```
+
+### How It Works
+
+1. **Middleware checks authentication**:
+   - If user is authenticated → uses `user:${userId}` as Redis key
+   - If not authenticated → falls back to `ip:${ipAddress}` as key
+
+2. **Redis stores rate limit counters**:
+   - Key: `user:uuid-123` or `ip:192.168.1.1`
+   - Value: Request count
+   - TTL: windowMs (60 seconds)
+
+3. **Response headers** (draft-6 standard):
+   ```
+   X-RateLimit-Limit: 30
+   X-RateLimit-Remaining: 25
+   X-RateLimit-Reset: 1672531200
+   ```
+
+### Benefits
+
+✅ **Fair limits per user** - Not affected by shared IPs
+✅ **Prevents abuse** - User can't bypass by reconnecting
+✅ **Flexible tiers** - Different limits for different operations
+✅ **Observable** - Track per-user usage in Redis
+✅ **Production-ready** - Handles CGNAT, proxy, VPN scenarios
+
+### Monitoring
+
+```bash
+# Check rate limit keys in Redis
+redis-cli KEYS "user:*"
+redis-cli KEYS "ip:*"
+
+# Check specific user's limit
+redis-cli GET "user:550e8400-e29b-41d4-a716-446655440000"
+
+# Monitor rate limit hits
+redis-cli MONITOR | grep "user:"
+```
+
+### Customization
+
+**Add custom rate limit tiers:**
+```typescript
+export const premiumUserRateLimit = () =>
+  userRateLimit({
+    windowMs: 60 * 1000,
+    limit: 200,  // Premium users get higher limit
+  });
+```
+
+**Per-endpoint custom limits:**
+```typescript
+blogRouter.post("/import", 
+  betterAuthMiddleware,
+  userRateLimit({ windowMs: 60000, limit: 1 }),  // Once per minute
+  importBlogs
+);
+```
+
 ## 🔐 Security Features
 
 - ✅ **Better Auth** - Complete authentication with session management
@@ -308,7 +824,8 @@ Example: `user` module handles user profile, avatar, and admin operations.
 - ✅ **Password Hashing** - Secure bcrypt hashing (handled by Better Auth)
 - ✅ **JWT Tokens** - 15-minute access tokens
 - ✅ **OAuth 2.0** - Google, Facebook, Discord
-- ✅ **Rate Limiting** - Redis-backed protection (100 req/min default)
+- ✅ **Dual Rate Limiting** - IP-based (global) + User-based (authenticated)
+- ✅ **User Rate Limiting** - Per-user limits (crucial for shared IPs/carrier-grade NAT)
 - ✅ **Role-Based Access** - Admin middleware for protected routes
 - ✅ **CORS** - Cross-origin resource sharing enabled
 - ✅ **Content-Type Validation** - API endpoints require JSON
@@ -316,11 +833,15 @@ Example: `user` module handles user profile, avatar, and admin operations.
 
 ## 📧 Email Features
 
+- ✅ **Queue-Based Email Delivery** - All emails sent via BullMQ queue with retry logic
 - ✅ **Email Verification** - Beautiful HTML emails with one-click verification
 - ✅ **Password Reset** - Secure reset flow with expiring tokens
 - ✅ **SMTP Support** - Works with Gmail, SendGrid, AWS SES, etc.
-- ✅ **Email Templates** - Professional responsive HTML emails
-- ✅ **Error Handling** - Graceful degradation if SMTP fails
+- ✅ **Email Templates** - Professional responsive HTML emails (centralized in email.ts)
+- ✅ **Retry Mechanism** - 3 automatic retries with exponential backoff (2s delay)
+- ✅ **Priority Queuing** - Verification/reset emails get higher priority
+- ✅ **Worker Concurrency** - Process up to 5 emails simultaneously
+- ✅ **Job Persistence** - Failed jobs kept for debugging (500 most recent)
 
 ## 📦 Tech Stack
 
@@ -334,8 +855,9 @@ Example: `user` module handles user profile, avatar, and admin operations.
 - **Nodemailer** - Email delivery
 
 ### Database & Storage
-- **PostgreSQL** - Relational database
-- **Drizzle ORM** - Type-safe queries
+- **PostgreSQL** - Relational database with UUID v7 primary keys
+- **Drizzle ORM** - Type-safe queries with full schema definition
+- **uuid** - UUID v7 generation for primary keys
 - **Redis** - Caching and rate limiting
 - **AWS S3** - File storage (avatars)
 
@@ -347,6 +869,7 @@ Example: `user` module handles user profile, avatar, and admin operations.
 - **Biome** - Fast linter and formatter
 - **Pino** - Structured logging
 - **tsx** - TypeScript execution
+- **Drizzle Kit** - Database migrations and Studio GUI
 
 ## 📖 Documentation
 
@@ -437,15 +960,19 @@ REDIS_PASSWORD=<strong-redis-password>
 ### Checklist
 
 - ✅ Set strong `BETTER_AUTH_SECRET` (32+ characters)
-- ✅ Use production database with SSL
+- ✅ Use production database with SSL and connection pooling
+- ✅ Run migrations with `pnpm db:migrate` (not `db:push`)
+- ✅ Enable PostgreSQL UUID extension if not already enabled
+- ✅ Optimize database indexes for UUID columns (already configured in schema)
 - ✅ Enable Redis password authentication
 - ✅ Configure CORS for your frontend domain
 - ✅ Set up HTTPS/SSL certificates
 - ✅ Configure OAuth redirect URIs for production
 - ✅ Set up S3 bucket with proper permissions
-- ✅ Enable database backups
-- ✅ Set up monitoring (logs, errors, performance)
+- ✅ Enable database backups with point-in-time recovery
+- ✅ Set up monitoring (logs, errors, performance, database metrics)
 - ✅ Configure rate limiting for your traffic
+- ✅ Test UUID generation performance under load
 
 ## 🤝 Contributing
 

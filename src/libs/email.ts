@@ -1,34 +1,34 @@
 import nodemailer from "nodemailer";
 import type { Transporter } from "nodemailer";
-import { env } from "../infrastructure/env.js";
-import { logger } from "../shared/logger.js";
 import {
-	addEmailJob,
-	addVerificationEmailJob,
-	addPasswordResetEmailJob,
-} from "../jobs/queues/email.queue.js";
+  addEmailJob,
+  addVerificationEmailJob,
+  addPasswordResetEmailJob,
+} from "@/jobs/queues/email.queue";
+import { envSchema } from "@/config/env";
+import { pinoLogger } from "@/libs/logger";
 
 let transporter: Transporter | null = null;
 
 function getTransporter(): Transporter {
-	if (transporter) {
-		return transporter;
-	}
+  if (transporter) {
+    return transporter;
+  }
 
-	transporter = nodemailer.createTransport({
-		host: env.SMTP_HOST,
-		port: env.SMTP_PORT,
-		secure: env.SMTP_SECURE,
-		auth:
-			env.SMTP_USER && env.SMTP_PASS
-				? {
-						user: env.SMTP_USER,
-						pass: env.SMTP_PASS,
-					}
-				: undefined,
-	});
+  transporter = nodemailer.createTransport({
+    host: envSchema.SMTP_HOST,
+    port: envSchema.SMTP_PORT,
+    secure: envSchema.SMTP_SECURE,
+    auth:
+      envSchema.SMTP_USER && envSchema.SMTP_PASS
+        ? {
+            user: envSchema.SMTP_USER,
+            pass: envSchema.SMTP_PASS,
+          }
+        : undefined,
+  });
 
-	return transporter;
+  return transporter;
 }
 
 /**
@@ -36,35 +36,38 @@ function getTransporter(): Transporter {
  * Called by email worker, not directly by application code
  */
 export async function sendEmailDirect({
-	to,
-	subject,
-	html,
-	text,
+  to,
+  subject,
+  html,
+  text,
 }: {
-	to: string;
-	subject: string;
-	html?: string;
-	text?: string;
+  to: string;
+  subject: string;
+  html?: string;
+  text?: string;
 }) {
-	const transport = getTransporter();
+  const transport = getTransporter();
 
-	const info = await transport.sendMail({
-		from: env.SMTP_FROM,
-		to,
-		subject,
-		html,
-		text,
-	});
+  const info = await transport.sendMail({
+    from: envSchema.SMTP_FROM,
+    to,
+    subject,
+    html,
+    text,
+  });
 
-	logger.info({ messageId: info.messageId, to, subject }, "Email sent successfully");
-	return { success: true, messageId: info.messageId };
+  pinoLogger.info(
+    { messageId: info.messageId, to, subject },
+    "Email sent successfully",
+  );
+  return { success: true, messageId: info.messageId };
 }
 
 /**
  * Generate verification email HTML template
  */
 export function generateVerificationEmailHtml(verificationUrl: string): string {
-	return `
+  return `
 <!DOCTYPE html>
 <html>
 <head>
@@ -90,7 +93,7 @@ export function generateVerificationEmailHtml(verificationUrl: string): string {
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td align="center" style="padding: 20px 0;">
-                    <a href="${verificationUrl}" 
+                    <a href="${verificationUrl}"
                        style="background-color: #4F46E5; color: #ffffff; padding: 14px 40px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px; display: inline-block;">
                       Verify Email
                     </a>
@@ -129,7 +132,7 @@ export function generateVerificationEmailHtml(verificationUrl: string): string {
  * Generate password reset email HTML template
  */
 export function generatePasswordResetEmailHtml(resetUrl: string): string {
-	return `
+  return `
 <!DOCTYPE html>
 <html>
 <head>
@@ -155,7 +158,7 @@ export function generatePasswordResetEmailHtml(resetUrl: string): string {
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td align="center" style="padding: 20px 0;">
-                    <a href="${resetUrl}" 
+                    <a href="${resetUrl}"
                        style="background-color: #DC2626; color: #ffffff; padding: 14px 40px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px; display: inline-block;">
                       Reset Password
                     </a>
@@ -200,77 +203,92 @@ export function generatePasswordResetEmailHtml(resetUrl: string): string {
  * Email will be sent by the email worker with retry logic
  */
 export async function sendEmail({
-	to,
-	subject,
-	html,
-	text,
+  to,
+  subject,
+  html,
+  text,
 }: {
-	to: string;
-	subject: string;
-	html?: string;
-	text?: string;
+  to: string;
+  subject: string;
+  html?: string;
+  text?: string;
 }) {
-	try {
-		const job = await addEmailJob({ to, subject, html, text });
-		logger.info({ jobId: job.id, to, subject }, "Email queued successfully");
-		return { success: true, jobId: job.id };
-	} catch (error) {
-		logger.error({ error, to, subject }, "Failed to queue email");
-		throw error;
-	}
+  try {
+    const job = await addEmailJob({ to, subject, html, text });
+    pinoLogger.info(
+      { jobId: job.id, to, subject },
+      "Email queued successfully",
+    );
+    return { success: true, jobId: job.id };
+  } catch (error) {
+    pinoLogger.error({ error, to, subject }, "Failed to queue email");
+    throw error;
+  }
 }
 
 /**
  * Queue verification email with higher priority
  */
 export async function sendVerificationEmail(
-	email: string,
-	verificationUrl: string,
+  email: string,
+  verificationUrl: string,
 ) {
-	try {
-		const job = await addVerificationEmailJob({
-			to: email,
-			verificationUrl,
-		});
-		logger.info({ jobId: job.id, to: email }, "Verification email queued successfully");
-		return { success: true, jobId: job.id };
-	} catch (error) {
-		logger.error({ error, to: email }, "Failed to queue verification email");
-		throw error;
-	}
+  try {
+    const job = await addVerificationEmailJob({
+      to: email,
+      verificationUrl,
+    });
+    pinoLogger.info(
+      { jobId: job.id, to: email },
+      "Verification email queued successfully",
+    );
+    return { success: true, jobId: job.id };
+  } catch (error) {
+    pinoLogger.error(
+      { error, to: email },
+      "Failed to queue verification email",
+    );
+    throw error;
+  }
 }
 
 /**
  * Queue password reset email with higher priority
  */
 export async function sendPasswordResetEmail(email: string, resetUrl: string) {
-	try {
-		const job = await addPasswordResetEmailJob({
-			to: email,
-			resetUrl,
-		});
-		logger.info({ jobId: job.id, to: email }, "Password reset email queued successfully");
-		return { success: true, jobId: job.id };
-	} catch (error) {
-		logger.error({ error, to: email }, "Failed to queue password reset email");
-		throw error;
-	}
+  try {
+    const job = await addPasswordResetEmailJob({
+      to: email,
+      resetUrl,
+    });
+    pinoLogger.info(
+      { jobId: job.id, to: email },
+      "Password reset email queued successfully",
+    );
+    return { success: true, jobId: job.id };
+  } catch (error) {
+    pinoLogger.error(
+      { error, to: email },
+      "Failed to queue password reset email",
+    );
+    throw error;
+  }
 }
 
 export async function verifySmtpConnection(): Promise<{
-	status: string;
-	error: string | null;
+  status: string;
+  error: string | null;
 }> {
-	try {
-		const transport = getTransporter();
-		await transport.verify();
-		logger.info("SMTP connection verified successfully");
-		return { status: "connected", error: null };
-	} catch (error) {
-		logger.error({ error }, "SMTP connection verification failed");
-		return {
-			status: "error",
-			error: error instanceof Error ? error.message : "Unknown error",
-		};
-	}
+  try {
+    const transport = getTransporter();
+    await transport.verify();
+    pinoLogger.info("SMTP connection verified successfully");
+    return { status: "connected", error: null };
+  } catch (error) {
+    pinoLogger.error({ error }, "SMTP connection verification failed");
+    return {
+      status: "error",
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
 }

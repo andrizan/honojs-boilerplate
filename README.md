@@ -48,7 +48,7 @@ src/
 │       ├── email.worker.ts             → Email worker (processes jobs)
 │       └── index.ts                    → Worker lifecycle management
 │
-├── shared/                             → Shared resources
+├── utils/                             → utils resources
 │   ├── middlewares/
 │   │   ├── better-auth.middleware.ts   → Better Auth session validator
 │   │   ├── role.middleware.ts          → Role-based access control
@@ -64,14 +64,14 @@ src/
 │   ├── auth.ts                         → Better Auth configuration
 │   └── email.ts                        → Email service (verification, reset)
 │
-└── infrastructure/                     → Infrastructure setup
-    ├── env.ts                          → Environment variables
+└── libs/                     → libs setup
+    ├── envSchema.ts                          → Environment variables
     ├── db.ts                           → Database connection (Drizzle)
     ├── schema.ts                       → Database schema (Better Auth + custom tables)
     ├── redis.ts                        → Redis connection
     ├── s3.ts                           → AWS S3 client
     ├── queue.ts                        → BullMQ setup
-    └── index.ts                        → Infrastructure exports
+    └── index.ts                        → libs exports
 ```
 
 ## 🛠️ Installation
@@ -89,7 +89,7 @@ yarn install
 
 ## 🔧 Environment Variables
 
-Create a `.env` file in the root directory (see `.env.example`):
+Create a `.env` file in the root directory (see `.envSchema.example`):
 
 ```env
 # Application
@@ -176,10 +176,10 @@ pnpm install
 
 ### 2. Setup Environment Variables
 
-Copy `.env.example` to `.env` and fill in your credentials:
+Copy `.envSchema.example` to `.env` and fill in your credentials:
 
 ```bash
-cp .env.example .env
+cp .envSchema.example .env
 ```
 
 **Required:**
@@ -426,7 +426,7 @@ blogs (example custom table)
 This project uses **Drizzle Kit CLI** for migrations (no custom migrate.ts script):
 
 ```bash
-# 1. Make schema changes in src/infrastructure/schema.ts
+# 1. Make schema changes in src/libs/schema.ts
 
 # 2. Generate migration files
 pnpm db:generate
@@ -446,18 +446,18 @@ pnpm db:push
 
 ### Database Configuration
 
-Located in `src/infrastructure/db.ts`:
+Located in `src/libs/db.ts`:
 
 ```typescript
 // Connection pool with full configuration
 const poolConfig: PoolConfig = {
-  connectionString: env.DATABASE_URL,
-  min: env.DATABASE_POOL_MIN,           // Minimum connections
-  max: env.DATABASE_POOL_MAX,           // Maximum connections
-  idleTimeoutMillis: env.DATABASE_IDLE_TIMEOUT,
-  connectionTimeoutMillis: env.DATABASE_CONNECTION_TIMEOUT,
-  statement_timeout: env.DATABASE_STATEMENT_TIMEOUT,
-  allowExitOnIdle: env.DATABASE_ALLOW_EXIT_ON_IDLE,
+  connectionString: envSchema.DATABASE_URL,
+  min: envSchema.DATABASE_POOL_MIN,           // Minimum connections
+  max: envSchema.DATABASE_POOL_MAX,           // Maximum connections
+  idleTimeoutMillis: envSchema.DATABASE_IDLE_TIMEOUT,
+  connectionTimeoutMillis: envSchema.DATABASE_CONNECTION_TIMEOUT,
+  statement_timeout: envSchema.DATABASE_STATEMENT_TIMEOUT,
+  allowExitOnIdle: envSchema.DATABASE_ALLOW_EXIT_ON_IDLE,
 };
 
 // Drizzle instance with schema
@@ -729,7 +729,7 @@ blogRouter.get("/my/blogs",
 
 ### Configuration
 
-Located in `src/shared/middlewares/user-rate-limit.middleware.ts`:
+Located in `src/middlewares/user-rate-limit.middleware.ts`:
 
 ```typescript
 export const strictUserRateLimit = () =>
@@ -771,7 +771,7 @@ export const relaxedUserRateLimit = () =>
 
 ### Benefits
 
-- ✅ **Fair limits per user** - Not affected by shared IPs
+- ✅ **Fair limits per user** - Not affected by utils IPs
 - ✅ **Prevents abuse** - User can't bypass by reconnecting
 - ✅ **Flexible tiers** - Different limits for different operations
 - ✅ **Observable** - Track per-user usage in Redis
@@ -819,7 +819,7 @@ blogRouter.post("/import",
 - ✅ **JWT Tokens** - 15-minute access tokens
 - ✅ **OAuth 2.0** - Google, Facebook, Discord
 - ✅ **Dual Rate Limiting** - IP-based (global) + User-based (authenticated)
-- ✅ **User Rate Limiting** - Per-user limits (crucial for shared IPs/carrier-grade NAT)
+- ✅ **User Rate Limiting** - Per-user limits (crucial for utils IPs/carrier-grade NAT)
 - ✅ **Role-Based Access** - Admin middleware for protected routes
 - ✅ **CORS** - Cross-origin resource sharing enabled
 - ✅ **Content-Type Validation** - API endpoints require JSON

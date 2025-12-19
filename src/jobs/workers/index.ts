@@ -1,19 +1,26 @@
-import { logger } from "../../shared/logger.js";
-import emailWorker from "./email.worker.js";
+import { pinoLogger } from "@/libs/logger";
+import emailWorker from "@/jobs/workers/email.worker";
 
 export function startWorkers() {
-	logger.info("Starting all workers...");
-	
-	// Email worker is automatically started when imported
-	logger.info("Email worker started");
+  pinoLogger.info("Starting all workers...");
+
+  // Email worker is automatically started when imported
+  emailWorker
+    .waitUntilReady()
+    .then(() => {
+      pinoLogger.info("Email worker started");
+    })
+    .catch((err) => {
+      pinoLogger.error({ err }, "Email worker failed to start");
+    });
 }
 
 export async function stopWorkers() {
-	logger.info("Stopping all workers...");
-	
-	await emailWorker.close();
-	
-	logger.info("All workers stopped");
+  pinoLogger.info("Stopping all workers...");
+
+  await emailWorker.close();
+
+  pinoLogger.info("All workers stopped");
 }
 
 export { emailWorker };

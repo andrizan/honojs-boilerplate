@@ -18,6 +18,7 @@ A production-ready boilerplate for building APIs with Hono.js, featuring modular
 - **Dual Rate Limiting** - IP-based (global) + User-based (authenticated, CGNAT-friendly)
 - **Job Queue** - Background processing with BullMQ for reliable email delivery
 - **Pino Logger** - Structured logging
+- **Startup Health Checks** - Logs Postgres/Redis/S3/BullMQ/SMTP status to terminal on boot
 - **Biome** - Fast linter and formatter
 - **Modular Architecture** - Clean separation of concerns with layered design
 
@@ -25,53 +26,63 @@ A production-ready boilerplate for building APIs with Hono.js, featuring modular
 
 ```
 src/
-├── app.ts                              → Main application entry point
+├── index.ts                         → Main entry (server + startup checks + workers)
 │
-├── modules/                            → Feature modules
-│   ├── user/
-│   │   ├── user.router.ts              → Route definitions
-│   │   ├── user.controller.ts          → HTTP handlers (profile, CRUD)
-│   │   ├── avatar.controller.ts        → Avatar upload/delete handlers
-│   │   ├── user.service.ts             → Business logic
-│   │   ├── user.repository.ts          → Database queries
-│   │   └── user.model.ts               → Type definitions
-│   │
-│   ├── auth/
-│   │   └── auth-better.router.ts       → Better Auth handler
-│   │
-│   └── index.ts                        → Module exports
+├── config/
+│   └── env.ts                        → Environment variables (zod + dotenv)
 │
-├── jobs/                               → Background jobs
+├── db/
+│   └── schema/                        → Drizzle schema
+│       └── (tables)
+│
+├── helpers/
+│   └── response.ts                    → Standardized API responses
+│
+├── jobs/
 │   ├── queues/
-│   │   └── email.queue.ts              → Email queue (BullMQ) with retry logic
+│   │   └── email.queue.ts             → BullMQ email queue (retry/backoff)
 │   └── workers/
-│       ├── email.worker.ts             → Email worker (processes jobs)
-│       └── index.ts                    → Worker lifecycle management
+│       ├── email.worker.ts            → Email worker (BullMQ Worker)
+│       └── index.ts                   → Worker lifecycle/logging
 │
-├── utils/                             → utils resources
-│   ├── middlewares/
-│   │   ├── better-auth.middleware.ts   → Better Auth session validator
-│   │   ├── role.middleware.ts          → Role-based access control
-│   │   ├── error.middleware.ts         → Global error handler
-│   │   ├── content-type.middleware.ts  → Content-type validation
-│   │   ├── rate-limit.middleware.ts    → IP-based rate limiting (global)
-│   │   └── user-rate-limit.middleware.ts → User-based rate limiting (authenticated)
-│   │
-│   ├── logger.ts                       → Pino logger setup
-│   └── response.ts                     → Standardized API responses
+├── libs/
+│   ├── auth.ts                        → Better Auth setup
+│   ├── email.ts                       → Email sending + templates + SMTP verify
+│   ├── logger.ts                      → Pino logger + request logger
+│   ├── postgres.ts                    → Postgres pool + drizzle + health check
+│   ├── queue.ts                       → BullMQ queue factory + BullMQ health check
+│   ├── redis.ts                       → Redis (ioredis) + cache helpers + health check
+│   └── s3.ts                          → S3 client + helpers + health check
 │
-├── libs/                               → Utility libraries
-│   ├── auth.ts                         → Better Auth configuration
-│   └── email.ts                        → Email service (verification, reset)
+├── middlewares/
+│   ├── better-auth.middleware.ts      → Session validation
+│   ├── content-type.middleware.ts     → Content-type validation
+│   ├── rate-limit.middleware.ts       → Global IP-based rate limit
+│   ├── role.middleware.ts             → Role-based access control
+│   └── user-rate-limit.middleware.ts  → Per-user rate limit
 │
-└── libs/                     → libs setup
-    ├── envSchema.ts                          → Environment variables
-    ├── db.ts                           → Database connection (Drizzle)
-    ├── schema.ts                       → Database schema (Better Auth + custom tables)
-    ├── redis.ts                        → Redis connection
-    ├── s3.ts                           → AWS S3 client
-    ├── queue.ts                        → BullMQ setup
-    └── index.ts                        → libs exports
+├── modules/
+│   ├── blog/
+│   │   ├── blog.controller.ts
+│   │   ├── blog.model.ts
+│   │   ├── blog.repository.ts
+│   │   ├── blog.routes.ts
+│   │   └── blog.service.ts
+│   └── user/
+│       ├── avatar.controller.ts
+│       ├── user.controller.ts
+│       ├── user.model.ts
+│       ├── user.repository.ts
+│       ├── user.routes.ts
+│       └── user.service.ts
+│
+├── routes/
+│   └── routes.ts                      → API routes aggregator (mounted at /api/v1)
+│
+└── utils/
+  ├── constants.ts
+  ├── date.ts
+  └── pagination.ts
 ```
 
 ## 🛠️ Installation
@@ -87,54 +98,6 @@ npm install
 yarn install
 ```
 
-## 🔧 Environment Variables
-
-Create a `.env` file in the root directory (see `.envSchema.example`):
-
-```env
-# Application
-NODE_ENV=development
-APP_URL=http://localhost
-APP_PORT=3000
-
-# Better Auth (generate: openssl rand -base64 32)
-BETTER_AUTH_SECRET=your-32-char-secret-change-in-production
-
-# Database (PostgreSQL)
-DATABASE_URL=postgresql://postgres:password@localhost:5432/dbname
-
-# Redis
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=
-
-# Email (SMTP) - Required for email verification
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER=your-email@gmail.com
-SMTP_PASS=your-app-password
-SMTP_FROM=noreply@example.com
-
-# OAuth Providers (Optional)
-GOOGLE_CLIENT_ID=your-google-client-id
-GOOGLE_CLIENT_SECRET=your-google-client-secret
-
-FACEBOOK_CLIENT_ID=your-facebook-app-id
-FACEBOOK_CLIENT_SECRET=your-facebook-app-secret
-
-DISCORD_CLIENT_ID=your-discord-client-id
-DISCORD_CLIENT_SECRET=your-discord-client-secret
-
-# AWS S3 (Required for avatar upload)
-AWS_REGION=us-east-1
-AWS_ACCESS_KEY_ID=your-access-key
-AWS_SECRET_ACCESS_KEY=your-secret-key
-AWS_S3_BUCKET=your-bucket-name
-AWS_S3_ENDPOINT=                      # Optional for MinIO/LocalStack
-AWS_S3_FORCE_PATH_STYLE=false         # Set true for MinIO
-```
-
 ### Generate BETTER_AUTH_SECRET
 
 ```bash
@@ -145,7 +108,7 @@ openssl rand -base64 32
 
 ```bash
 # Development
-pnpm dev              # Start dev server with hot-reload
+pnpm dev              # Start dev server (Bun watch)
 
 # Build
 pnpm build            # Compile TypeScript to JavaScript
@@ -176,10 +139,10 @@ pnpm install
 
 ### 2. Setup Environment Variables
 
-Copy `.envSchema.example` to `.env` and fill in your credentials:
+Copy `.env.example` to `.env` and fill in your credentials:
 
 ```bash
-cp .envSchema.example .env
+cp .env.example .env
 ```
 
 **Required:**
@@ -218,33 +181,22 @@ pnpm db:migrate
 pnpm dev
 ```
 
-Server will start at `http://localhost:3000`
+Server will start at `http://localhost:9000`
 
 ### 5. Test the API
 
-**Health Check:**
+**Health (no auth):**
 ```bash
-curl http://localhost:3000/api/health
+curl http://localhost:9000/readyz
+curl http://localhost:9000/health
 ```
-
-**Sign Up:**
-```bash
-curl -X POST http://localhost:3000/api/auth/sign-up/email \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "user@example.com",
-    "password": "password123",
-    "name": "John Doe"
-  }'
-```
-
-Check your email for verification link!
 
 ## 📚 API Endpoints
 
 ### Health Check
 ```
-GET /api/health
+GET /readyz
+GET /health
 ```
 
 ### Authentication (Better Auth)
@@ -277,30 +229,30 @@ POST /api/auth/sign-out               # Sign out
 ### User Management
 
 ```bash
-GET    /api/users/profile             # Get current user profile
-POST   /api/users/avatar              # Upload avatar (multipart/form-data)
-DELETE /api/users/avatar              # Delete avatar
+GET    /api/v1/users/profile          # Get current user profile
+POST   /api/v1/users/avatar           # Upload avatar (multipart/form-data)
+DELETE /api/v1/users/avatar           # Delete avatar
 
 # Admin only
-GET    /api/users                     # Get all users (paginated)
-GET    /api/users/:id                 # Get user by ID (UUID)
-PATCH  /api/users/:id                 # Update user (UUID)
-DELETE /api/users/:id                 # Delete user (UUID)
+GET    /api/v1/users                  # Get all users (paginated)
+GET    /api/v1/users/:id              # Get user by ID (UUID)
+PATCH  /api/v1/users/:id              # Update user (UUID)
+DELETE /api/v1/users/:id              # Delete user (UUID)
 ```
 
 ### Blog Management (Example Feature)
 
 ```bash
 # Public endpoints
-GET    /api/blogs                     # Get all published blogs (paginated)
-GET    /api/blogs/:id                 # Get blog by ID (UUID)
-GET    /api/blogs/slug/:slug          # Get blog by slug
+GET    /api/v1/blogs                  # Get all published blogs (paginated)
+GET    /api/v1/blogs/:id              # Get blog by ID (UUID)
+GET    /api/v1/blogs/slug/:slug       # Get blog by slug
 
 # Authenticated endpoints
-POST   /api/blogs                     # Create blog (requires auth)
-GET    /api/blogs/my/blogs            # Get current user's blogs
-PATCH  /api/blogs/:id                 # Update blog (UUID, author only)
-DELETE /api/blogs/:id                 # Delete blog (UUID, author only)
+POST   /api/v1/blogs                  # Create blog (requires auth)
+GET    /api/v1/blogs/my/blogs         # Get current user's blogs
+PATCH  /api/v1/blogs/:id              # Update blog (UUID, author only)
+DELETE /api/v1/blogs/:id              # Delete blog (UUID, author only)
 ```
 
 **Note:** All IDs in the API are UUIDs (v7 format), not integers.
@@ -426,7 +378,7 @@ blogs (example custom table)
 This project uses **Drizzle Kit CLI** for migrations (no custom migrate.ts script):
 
 ```bash
-# 1. Make schema changes in src/libs/schema.ts
+# 1. Make schema changes in src/db/schema/
 
 # 2. Generate migration files
 pnpm db:generate
@@ -443,47 +395,6 @@ pnpm db:push
 **Development vs Production:**
 - **Development**: Use `pnpm db:push` for quick prototyping (no migration history)
 - **Production**: Always use `pnpm db:generate` + `pnpm db:migrate` for versioned migrations
-
-### Database Configuration
-
-Located in `src/libs/db.ts`:
-
-```typescript
-// Connection pool with full configuration
-const poolConfig: PoolConfig = {
-  connectionString: envSchema.DATABASE_URL,
-  min: envSchema.DATABASE_POOL_MIN,           // Minimum connections
-  max: envSchema.DATABASE_POOL_MAX,           // Maximum connections
-  idleTimeoutMillis: envSchema.DATABASE_IDLE_TIMEOUT,
-  connectionTimeoutMillis: envSchema.DATABASE_CONNECTION_TIMEOUT,
-  statement_timeout: envSchema.DATABASE_STATEMENT_TIMEOUT,
-  allowExitOnIdle: envSchema.DATABASE_ALLOW_EXIT_ON_IDLE,
-};
-
-// Drizzle instance with schema
-export const db = drizzle(pool, { schema });
-
-// Health check utility
-export const checkDbConnection = async () => { /* ... */ }
-
-// Pool statistics
-export const getDbPoolStats = () => { /* ... */ }
-
-// Graceful shutdown
-export const closeDbPool = async () => { /* ... */ }
-```
-
-**Environment variables for database:**
-```env
-DATABASE_URL=postgresql://user:password@localhost:5432/dbname
-DATABASE_POOL_MIN=2
-DATABASE_POOL_MAX=10
-DATABASE_IDLE_TIMEOUT=30000
-DATABASE_CONNECTION_TIMEOUT=5000
-DATABASE_STATEMENT_TIMEOUT=30000
-DATABASE_ALLOW_EXIT_ON_IDLE=false
-DATABASE_ENABLE_LOGGING=false
-```
 
 ### Drizzle Studio
 
@@ -546,88 +457,36 @@ defaultJobOptions: {
 }
 ```
 
+Note: queues are created via the shared factory `createQueue(name, opts)` which uses `connection: getRedis()` under the hood. This keeps queue clients consistent with the application's Redis instance.
+
 ### Worker Configuration
 
 Located in `src/jobs/workers/email.worker.ts`:
 
 ```typescript
-{
-  connection: getRedis(),             // Redis connection
-  concurrency: 5,                     // Process 5 jobs simultaneously
+// Worker uses a dedicated redis options object to ensure blocking commands work
+const redisOptions: RedisOptions = {
+  host: envSchema.REDIS_HOST,
+  port: envSchema.REDIS_PORT,
+  password: envSchema.REDIS_PASSWORD,
+  db: envSchema.REDIS_DB,
+  keyPrefix: envSchema.REDIS_KEY_PREFIX,
+  maxRetriesPerRequest: null,        // Required for blocking connections
+  connectTimeout: envSchema.REDIS_CONNECT_TIMEOUT,
+  commandTimeout: undefined,        // No client-side timeout for blocking commands
+  enableReadyCheck: false,
+  lazyConnect: false,
+  keepAlive: envSchema.REDIS_KEEP_ALIVE,
+};
+
+const worker = new Worker(QUEUE_NAMES.EMAIL, processor, {
+  connection: redisOptions,
+  blockingConnection: true,          // Let BullMQ create a blocking connection
+  concurrency: 5,
   removeOnComplete: { count: 100 },
   removeOnFail: { count: 500 },
-}
-```
-
-### Email Types
-
-**1. Generic Email**
-```typescript
-await sendEmail({
-  to: "user@example.com",
-  subject: "Welcome",
-  html: "<h1>Welcome!</h1>",
-  text: "Welcome!",
 });
 ```
-
-**2. Verification Email (Priority)**
-```typescript
-await sendVerificationEmail(
-  "user@example.com",
-  "https://yourapp.com/verify?token=abc123"
-);
-```
-
-**3. Password Reset Email (Priority)**
-```typescript
-await sendPasswordResetEmail(
-  "user@example.com",
-  "https://yourapp.com/reset?token=xyz789"
-);
-```
-
-### Email Templates
-
-All HTML templates centralized in `src/libs/email.ts`:
-- `generateVerificationEmailHtml(url)` - Beautiful responsive verification email
-- `generatePasswordResetEmailHtml(url)` - Responsive reset email with security tips
-
-**No duplication** - Worker imports and uses these templates.
-
-### Monitoring
-
-Check queue status via BullMQ Board or Redis:
-
-```bash
-# Redis CLI - check queue length
-redis-cli LLEN bull:email:waiting
-redis-cli LLEN bull:email:active
-redis-cli LLEN bull:email:failed
-
-# Application logs (Pino)
-# → "Email queued successfully" (when job added)
-# → "Email job processed successfully" (when sent)
-# → "Email job failed" (on failure after retries)
-```
-
-### Troubleshooting
-
-**Emails not being sent:**
-1. Check Redis is running: `pnpm dev` (worker starts with app)
-2. Check SMTP credentials in `.env`
-3. Check worker logs for errors
-4. Inspect failed jobs in Redis
-
-**Worker not starting:**
-- Worker automatically starts with `pnpm dev`
-- Check logs: "Starting all workers..." → "Email worker started"
-- Verify Redis connection in health check endpoint
-
-**Too many retries:**
-- Adjust `attempts` in `email.queue.ts`
-- Check SMTP timeout settings
-- Consider using a queue monitoring tool
 
 ## 🛡️ Rate Limiting Strategy
 
@@ -670,7 +529,7 @@ In regions like **Indonesia**, IPv4 exhaustion causes carrier-grade NAT (CGNAT),
 
 ### Implementation
 
-**1. Global IP-Based Rate Limit** (applied to all routes in app.ts):
+**1. Global IP-Based Rate Limit** (applied globally in `src/index.ts`):
 ```typescript
 app.use("*", rateLimit({ windowMs: 60 * 1000, limit: 100 }));
 // → 100 requests per minute per IP
@@ -840,7 +699,7 @@ blogRouter.post("/import",
 ## 📦 Tech Stack
 
 ### Core
-- **Runtime**: Node.js
+- **Runtime**: Bun (dev) / Node.js (production build)
 - **Framework**: Hono.js (fast, lightweight)
 - **Language**: TypeScript
 
@@ -869,7 +728,7 @@ blogRouter.post("/import",
 
 ```bash
 # Test authentication flow
-curl -X POST http://localhost:3000/api/auth/sign-up/email \
+curl -X POST http://localhost:9000/api/auth/sign-up/email \
   -H "Content-Type: application/json" \
   -d '{"email":"test@example.com","password":"Test123!","name":"Test User"}'
 
@@ -877,12 +736,12 @@ curl -X POST http://localhost:3000/api/auth/sign-up/email \
 # Click verification link or use token
 
 # Sign in
-curl -X POST http://localhost:3000/api/auth/sign-in/email \
+curl -X POST http://localhost:9000/api/auth/sign-in/email \
   -H "Content-Type: application/json" \
   -d '{"email":"test@example.com","password":"Test123!"}'
 
 # Get session (use token from sign-in)
-curl http://localhost:3000/api/auth/get-session \
+curl http://localhost:9000/api/auth/get-session \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
@@ -893,7 +752,7 @@ curl http://localhost:3000/api/auth/get-session \
 1. **Google OAuth:**
    - Go to [Google Cloud Console](https://console.cloud.google.com/)
    - Create OAuth 2.0 credentials
-   - Add redirect URI: `http://localhost:3000/api/auth/callback/google`
+  - Add redirect URI: `http://localhost:9000/api/auth/callback/google`
 
 2. **Facebook OAuth:**
    - Go to [Facebook Developers](https://developers.facebook.com/)
@@ -903,7 +762,7 @@ curl http://localhost:3000/api/auth/get-session \
 3. **Discord OAuth:**
    - Go to [Discord Developer Portal](https://discord.com/developers)
    - Create application
-   - Add redirect URI: `http://localhost:3000/api/auth/callback/discord`
+  - Add redirect URI: `http://localhost:9000/api/auth/callback/discord`
 
 ### SMTP Setup (Gmail Example)
 
@@ -931,58 +790,6 @@ docker run -p 9000:9000 -p 9001:9001 \
   -e MINIO_ROOT_PASSWORD=minioadmin \
   minio/minio server /data --console-address ":9001"
 ```
-
-## 🚀 Production Deployment
-
-### Environment
-
-```env
-NODE_ENV=production
-APP_URL=https://yourdomain.com
-BETTER_AUTH_SECRET=<strong-32-char-secret>
-DATABASE_URL=<production-postgres-url>
-REDIS_PASSWORD=<strong-redis-password>
-```
-
-### Checklist
-
-- ✅ Set strong `BETTER_AUTH_SECRET` (32+ characters)
-- ✅ Use production database with SSL and connection pooling
-- ✅ Run migrations with `pnpm db:migrate` (not `db:push`)
-- ✅ Enable PostgreSQL UUID extension if not already enabled
-- ✅ Optimize database indexes for UUID columns (already configured in schema)
-- ✅ Enable Redis password authentication
-- ✅ Configure CORS for your frontend domain
-- ✅ Set up HTTPS/SSL certificates
-- ✅ Configure OAuth redirect URIs for production
-- ✅ Set up S3 bucket with proper permissions
-- ✅ Enable database backups with point-in-time recovery
-- ✅ Set up monitoring (logs, errors, performance, database metrics)
-- ✅ Configure rate limiting for your traffic
-- ✅ Test UUID generation performance under load
-
-## 🐛 Troubleshooting
-
-### Email verification not working
-- Check SMTP credentials in `.env`
-- Test connection: `curl http://localhost:3000/api/health` (check SMTP status)
-- Check spam folder
-- Enable "Less secure app access" for Gmail (or use App Password)
-
-### Avatar upload fails
-- Check AWS credentials
-- Verify S3 bucket exists and has proper permissions
-- Check file size (max 5MB) and type (JPEG, PNG, GIF, WebP)
-
-### OAuth not working
-- Verify redirect URIs match exactly
-- Check OAuth credentials
-- Ensure `APP_URL` is correct in `.env`
-
-### Database connection fails
-- Check `DATABASE_URL` format
-- Verify PostgreSQL is running
-- Check firewall/network settings
 
 ## 📄 License
 

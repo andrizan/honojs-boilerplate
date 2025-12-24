@@ -20,6 +20,8 @@ A production-ready boilerplate for building APIs with Hono.js, featuring modular
 - **Pino Logger** - Structured logging
 - **Startup Health Checks** - Logs Postgres/Redis/S3/BullMQ/SMTP status to terminal on boot
 - **Biome** - Fast linter and formatter
+ - **Typed DTOs & Validation** - Zod-based DTOs and response DTOs in services
+ - **Consistent Pagination** - Standardized paginated responses (`data` + `pagination`)
 - **Modular Architecture** - Clean separation of concerns with layered design
 
 ## 📁 Project Structure
@@ -64,6 +66,7 @@ src/
 ├── modules/
 │   ├── blog/
 │   │   ├── blog.controller.ts
+│   │   ├── blog.dto.ts                 → Zod schemas + response DTOs
 │   │   ├── blog.model.ts
 │   │   ├── blog.repository.ts
 │   │   ├── blog.routes.ts
@@ -71,6 +74,7 @@ src/
 │   └── user/
 │       ├── avatar.controller.ts
 │       ├── user.controller.ts
+│       ├── user.dto.ts                 → Zod schemas + response DTOs
 │       ├── user.model.ts
 │       ├── user.repository.ts
 │       ├── user.routes.ts
@@ -82,7 +86,7 @@ src/
 └── utils/
   ├── constants.ts
   ├── date.ts
-  └── pagination.ts
+  └── pagination.ts — helpers: `buildPaginationMeta`, `createPaginatedResponse`, `calculatePaginationOffset`
 ```
 
 ## 🛠️ Installation

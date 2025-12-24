@@ -33,41 +33,6 @@ app.get("/readyz", (c) => {
   return c.text("ok");
 });
 
-app.get("/health", async (c) => {
-  const [redis, postgres, s3, bullmq] = await Promise.all([
-    checkRedisConnection(),
-    checkDbConnection(),
-    checkS3Connection(),
-    checkBullMqConnection(),
-  ]);
-
-  const checks = { redis, postgres, s3, bullmq } as const;
-  const entries = Object.entries(checks);
-
-  entries.forEach(([service, result]) => {
-    const log = { service, status: result.status };
-    const msg = result.error
-      ? `Health ${service} failed: ${result.error}`
-      : `Health ${service} ok`;
-    if (result.status === "connected") {
-      pinoLogger.info(log, msg);
-    } else {
-      pinoLogger.error({ ...log, error: result.error }, msg);
-    }
-  });
-
-  const allHealthy = entries.every(([, result]) => result.status === "connected");
-
-  return sendSuccess(
-    c,
-    {
-      status: allHealthy ? "ok" : "degraded",
-      checks,
-    },
-    allHealthy ? 200 : 503,
-  );
-});
-
 app.on(["POST", "GET"], "/api/auth/**", (c) => {
   return auth.handler(c.req.raw);
 });

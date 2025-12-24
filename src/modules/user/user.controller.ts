@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import { UserService } from "@/modules/user/user.service";
 import { parsePaginationQuery } from "@/utils/pagination";
 import { sendError, sendSuccess } from "@/helpers/response";
+import type { UpdateUserDTO } from "@/modules/user/user.dto";
 
 const userService = new UserService();
 
@@ -50,7 +51,7 @@ export const getUserById = async (c: Context) => {
 export const updateUser = async (c: Context) => {
   try {
     const id = c.req.param("id");
-    const data = await c.req.json();
+    const data: UpdateUserDTO = await c.req.json();
 
     const user = await userService.updateUser(id, data);
     return sendSuccess(c, user, 200, "User updated successfully");

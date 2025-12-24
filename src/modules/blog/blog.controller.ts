@@ -2,39 +2,23 @@ import type { Context } from "hono";
 import { BlogService } from "@/modules/blog/blog.service";
 import { parsePaginationQuery } from "@/utils/pagination";
 import { sendError, sendSuccess } from "@/helpers/response";
+import type { CreateBlogDTO, UpdateBlogDTO } from "@/modules/blog/blog.dto";
+import { generateSlug } from "@/utils/slug";
 
 const blogService = new BlogService();
 
 export const createBlog = async (c: Context) => {
   try {
     const user = c.get("user");
-    const body = await c.req.json();
+    const body: CreateBlogDTO = await c.req.json();
 
-    const { title, slug, content, excerpt, coverImage, published } = body;
+    const slug = body.slug ?? generateSlug(body.title);
 
-    if (!title || !content) {
-      return sendError(c, "Title and content are required", 400);
-    }
+    const blog = await blogService.createBlog(body, user.id, slug);
 
-    const finalSlug = slug || blogService.generateSlug(title);
-
-    const blog = await blogService.createBlog({
-      title,
-      slug: finalSlug,
-      content,
-      excerpt,
-      coverImage,
-      published: published || false,
-      authorId: user.id,
-    });
-
-    return sendSuccess(c, blog, 201, "Blog created successfully");
+    return sendSuccess(c, blog, 201);
   } catch (err) {
-    return sendError(
-      c,
-      err instanceof Error ? err.message : "Failed to create blog",
-      400,
-    );
+    return sendError(c, err instanceof Error ? err.message : "Failed", 400);
   }
 };
 
@@ -100,30 +84,12 @@ export const updateBlog = async (c: Context) => {
   try {
     const user = c.get("user");
     const id = c.req.param("id");
-    const body = await c.req.json();
+    const body: UpdateBlogDTO = await c.req.json();
 
-    const { title, slug, content, excerpt, coverImage, published } = body;
-
-    const blog = await blogService.updateBlog(
-      id,
-      {
-        title,
-        slug,
-        content,
-        excerpt,
-        coverImage,
-        published,
-      },
-      user.id,
-    );
-
-    return sendSuccess(c, blog, 200, "Blog updated successfully");
+    const blog = await blogService.updateBlog(id, body, user.id);
+    return sendSuccess(c, blog, 200);
   } catch (err) {
-    return sendError(
-      c,
-      err instanceof Error ? err.message : "Failed to update blog",
-      400,
-    );
+    return sendError(c, err instanceof Error ? err.message : "Failed", 400);
   }
 };
 

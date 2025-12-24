@@ -1,98 +1,57 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq, count } from "drizzle-orm";
 import { db } from "@/libs/postgres";
-import { type User, users } from "@/modules/user/user.model";
+import { type User, user as users } from "@/db/schema/auth/user";
 
 export class UserRepository {
   async findByEmail(email: string): Promise<User | undefined> {
-    const result = await db
-      .select({
-        id: users.id,
-        name: users.name,
-        email: users.email,
-        image: users.image,
-        emailVerified: users.emailVerified,
-        role: users.role,
-        createdAt: users.createdAt,
-        updatedAt: users.updatedAt,
-      })
+    const [user] = await db
+      .select()
       .from(users)
       .where(eq(users.email, email))
-      .execute();
-    return result[0] as User | undefined;
+      .limit(1);
+    return user;
   }
 
   async findById(id: string): Promise<User | undefined> {
-    const result = await db
-      .select({
-        id: users.id,
-        name: users.name,
-        email: users.email,
-        image: users.image,
-        emailVerified: users.emailVerified,
-        role: users.role,
-        createdAt: users.createdAt,
-        updatedAt: users.updatedAt,
-      })
+    const [user] = await db
+      .select()
       .from(users)
       .where(eq(users.id, id))
-      .execute();
-    return result[0] as User | undefined;
+      .limit(1);
+    return user;
   }
 
   async findAll(
     limit = 10,
     offset = 0,
   ): Promise<{ users: User[]; total: number }> {
-    const [usersResult, countResult] = await Promise.all([
+    const [usersResult, totalResult] = await Promise.all([
       db
-        .select({
-          id: users.id,
-          name: users.name,
-          email: users.email,
-          image: users.image,
-          emailVerified: users.emailVerified,
-          role: users.role,
-          createdAt: users.createdAt,
-          updatedAt: users.updatedAt,
-        })
+        .select()
         .from(users)
         .orderBy(desc(users.createdAt))
         .limit(limit)
-        .offset(offset)
-        .execute(),
-      db.select({ count: sql<number>`count(*)` }).from(users).execute(),
+        .offset(offset),
+      db.select({ total: count() }).from(users),
     ]);
 
     return {
-      users: usersResult as User[],
-      total: Number(countResult[0]?.count || 0),
+      users: usersResult,
+      total: Number(totalResult[0]?.total ?? 0),
     };
   }
 
-  async update(
-    id: string,
-    data: Partial<Pick<User, "name" | "image" | "role">>,
-  ): Promise<User | undefined> {
-    const result = await db
+  async update(id: string, data: Partial<User>): Promise<User | undefined> {
+    const [user] = await db
       .update(users)
-      .set(data)
+      .set({ ...data, updatedAt: new Date() })
       .where(eq(users.id, id))
-      .returning({
-        id: users.id,
-        name: users.name,
-        email: users.email,
-        image: users.image,
-        emailVerified: users.emailVerified,
-        role: users.role,
-        createdAt: users.createdAt,
-        updatedAt: users.updatedAt,
-      })
-      .execute();
-    return result[0] as User | undefined;
+      .returning();
+    return user;
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await db.delete(users).where(eq(users.id, id)).execute();
+    const result = await db.delete(users).where(eq(users.id, id));
     return result.rowCount ? result.rowCount > 0 : false;
   }
 }

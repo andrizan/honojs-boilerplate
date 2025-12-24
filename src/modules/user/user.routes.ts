@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { sValidator } from "@hono/standard-validator";
 import { betterAuthMiddleware } from "@/middlewares/better-auth.middleware";
 import { requireAdmin } from "@/middlewares/role.middleware";
 import {
@@ -14,59 +15,33 @@ import {
   updateUser,
 } from "@/modules/user/user.controller";
 import { uploadAvatar, deleteAvatar } from "@/modules/user/avatar.controller";
+import { updateUserSchema } from "@/modules/user/user.dto";
 
-const userRouter = new Hono();
+const user = new Hono();
+user.use("*", betterAuthMiddleware);
 
-// User profile (read-heavy, relaxed limit)
-userRouter.get(
-  "/profile",
-  betterAuthMiddleware,
-  relaxedUserRateLimit(),
-  getUserProfile,
-);
+// profile
+user.get("/profile", relaxedUserRateLimit(), getUserProfile);
 
-// Avatar operations (sensitive, strict limit)
-userRouter.post(
+// avatar
+user.route(
   "/avatar",
-  betterAuthMiddleware,
-  strictUserRateLimit(),
-  uploadAvatar,
-);
-userRouter.delete(
-  "/avatar",
-  betterAuthMiddleware,
-  strictUserRateLimit(),
-  deleteAvatar,
+  new Hono()
+    .use(strictUserRateLimit())
+    .post("/", uploadAvatar)
+    .delete("/", deleteAvatar)
 );
 
-// Admin operations (standard limit)
-userRouter.get(
+// admin
+user.route(
   "/",
-  betterAuthMiddleware,
-  requireAdmin,
-  standardUserRateLimit(),
-  getAllUsers,
-);
-userRouter.get(
-  "/:id",
-  betterAuthMiddleware,
-  requireAdmin,
-  standardUserRateLimit(),
-  getUserById,
-);
-userRouter.patch(
-  "/:id",
-  betterAuthMiddleware,
-  requireAdmin,
-  standardUserRateLimit(),
-  updateUser,
-);
-userRouter.delete(
-  "/:id",
-  betterAuthMiddleware,
-  requireAdmin,
-  standardUserRateLimit(),
-  deleteUser,
+  new Hono()
+    .use(requireAdmin)
+    .use(standardUserRateLimit())
+    .get("/", getAllUsers)
+    .get("/:id", getUserById)
+    .patch("/:id", sValidator("json", updateUserSchema), updateUser)
+    .delete("/:id", deleteUser)
 );
 
-export default userRouter;
+export default user;

@@ -14,38 +14,41 @@ import {
   updateBlog,
   deleteBlog,
 } from "@/modules/blog/blog.controller";
+import { sValidator } from "@hono/standard-validator";
+import { createBlogSchema, updateBlogSchema } from "@/modules/blog/blog.dto";
 
-const blogRouter = new Hono();
+const blog = new Hono();
 
-// Public routes (no user rate limit, uses global IP-based rate limit)
-blogRouter.get("/", getAllBlogs);
-blogRouter.get("/slug/:slug", getBlogBySlug);
-blogRouter.get("/:id", getBlogById);
+/* public */
+blog.get("/", getAllBlogs);
+blog.get("/slug/:slug", getBlogBySlug);
+blog.get("/:id", getBlogById);
 
-// Protected routes (user-based rate limiting)
-// Create blog (strict - prevent spam)
-blogRouter.post("/", betterAuthMiddleware, strictUserRateLimit(), createBlog);
+blog.use("*", betterAuthMiddleware);
 
-// Read user's blogs (relaxed - read-heavy)
-blogRouter.get(
-  "/my/blogs",
-  betterAuthMiddleware,
-  relaxedUserRateLimit(),
-  getMyBlogs,
+/* strict */
+blog.route(
+  "/",
+  new Hono()
+    .use(strictUserRateLimit(), sValidator("json", createBlogSchema))
+    .post("/", createBlog)
 );
 
-// Update/Delete (standard limit)
-blogRouter.patch(
-  "/:id",
-  betterAuthMiddleware,
-  standardUserRateLimit(),
-  updateBlog,
-);
-blogRouter.delete(
-  "/:id",
-  betterAuthMiddleware,
-  standardUserRateLimit(),
-  deleteBlog,
+/* relaxed */
+blog.route(
+  "/",
+  new Hono()
+    .use(relaxedUserRateLimit())
+    .get("/my/blogs", getMyBlogs)
 );
 
-export default blogRouter;
+/* standard */
+blog.route(
+  "/",
+  new Hono()
+    .use(standardUserRateLimit())
+    .patch(":id", sValidator("json", updateBlogSchema), updateBlog)
+    .delete("/:id", deleteBlog)
+);
+
+export default blog;

@@ -1,6 +1,13 @@
-import type { Blog } from "@/modules/blog/blog.model";
+import type { Blog } from "@/db/schema";
+import type {
+  CreateBlogDTO,
+  UpdateBlogDTO,
+  BlogResponseDTO,
+  BlogListResponseDTO,
+} from "@/modules/blog/blog.dto";
+import { toBlogResponseDTO } from "@/modules/blog/blog.dto";
 import { BlogRepository } from "@/modules/blog/blog.repository";
-import { buildPaginationMeta, getOffset } from "@/utils/pagination";
+import { createPaginatedResponse, calculatePaginationOffset } from "@/utils/pagination";
 
 export class BlogService {
   private repository: BlogRepository;
@@ -9,123 +16,107 @@ export class BlogService {
     this.repository = new BlogRepository();
   }
 
-  async createBlog(data: {
-    title: string;
-    slug: string;
-    content: string;
-    excerpt?: string;
-    coverImage?: string;
-    published?: boolean;
-    authorId: string;
-  }): Promise<Blog> {
-    const slugExists = await this.repository.slugExists(data.slug);
+  async createBlog(
+    data: CreateBlogDTO,
+    authorId: string,
+    slug: string,
+  ): Promise<BlogResponseDTO> {
+    const slugExists = await this.repository.slugExists(slug);
     if (slugExists) {
       throw new Error("Slug already exists");
     }
 
-    const publishedAt = data.published ? new Date() : null;
-
-    return this.repository.create({
+    const published = data.published ?? false;
+    const blogData = {
       ...data,
-      publishedAt,
-    });
+      slug,
+      authorId,
+      published,
+      publishedAt: published ? new Date() : null,
+    };
+
+    const blog = await this.repository.create(blogData);
+    return toBlogResponseDTO(blog);
   }
 
-  async getBlogById(id: string): Promise<Blog> {
+  async getBlogById(id: string): Promise<BlogResponseDTO> {
     const blog = await this.repository.findById(id);
     if (!blog) {
       throw new Error("Blog not found");
     }
-    return blog;
+    return toBlogResponseDTO(blog);
   }
 
-  async getBlogBySlug(slug: string): Promise<Blog> {
+  async getBlogBySlug(slug: string): Promise<BlogResponseDTO> {
     const blog = await this.repository.findBySlug(slug);
     if (!blog) {
       throw new Error("Blog not found");
     }
-    return blog;
+    return toBlogResponseDTO(blog);
   }
 
   async getAllBlogs(
     page = 1,
     limit = 10,
     publishedOnly = false,
-  ): Promise<{
-    blogs: Blog[];
-    pagination: ReturnType<typeof buildPaginationMeta>;
-  }> {
-    const offset = getOffset({ page, limit });
+  ): Promise<BlogListResponseDTO> {
+    const offset = calculatePaginationOffset({ page, limit });
     const result = await this.repository.findAll(limit, offset, publishedOnly);
 
-    return {
-      blogs: result.blogs,
-      pagination: buildPaginationMeta({ total: result.total, page, limit }),
-    };
+    return createPaginatedResponse(
+      result.blogs.map(toBlogResponseDTO),
+      result.total,
+      page,
+      limit,
+    );
   }
 
   async getBlogsByAuthor(
     authorId: string,
     page = 1,
     limit = 10,
-  ): Promise<{
-    blogs: Blog[];
-    pagination: ReturnType<typeof buildPaginationMeta>;
-  }> {
-    const offset = getOffset({ page, limit });
+  ): Promise<BlogListResponseDTO> {
+    const offset = calculatePaginationOffset({ page, limit });
     const result = await this.repository.findByAuthor(authorId, limit, offset);
 
-    return {
-      blogs: result.blogs,
-      pagination: buildPaginationMeta({ total: result.total, page, limit }),
-    };
+    return createPaginatedResponse(
+      result.blogs.map(toBlogResponseDTO),
+      result.total,
+      page,
+      limit,
+    );
   }
 
   async updateBlog(
     id: string,
-    data: {
-      title?: string;
-      slug?: string;
-      content?: string;
-      excerpt?: string;
-      coverImage?: string;
-      published?: boolean;
-    },
+    data: UpdateBlogDTO,
     authorId: string,
-  ): Promise<Blog> {
-    const existingBlog = await this.repository.findById(id);
-    if (!existingBlog) {
-      throw new Error("Blog not found");
+  ): Promise<BlogResponseDTO> {
+    if (Object.keys(data).length === 0) {
+      throw new Error("No fields to update");
     }
 
-    if (existingBlog.authorId !== authorId) {
-      throw new Error("Unauthorized: You can only update your own blogs");
+    const existing = await this.repository.findById(id);
+    if (!existing) throw new Error("Blog not found");
+    if (existing.authorId !== authorId) throw new Error("Unauthorized");
+
+    if (data.slug && data.slug !== existing.slug) {
+      const exists = await this.repository.slugExists(data.slug, id);
+      if (exists) throw new Error("Slug already exists");
     }
 
-    if (data.slug && data.slug !== existingBlog.slug) {
-      const slugExists = await this.repository.slugExists(data.slug, id);
-      if (slugExists) {
-        throw new Error("Slug already exists");
-      }
+    const updateData: Partial<Blog> = { ...data };
+
+    // Set publishedAt when publishing for the first time
+    if (data.published !== undefined && data.published && !existing.published) {
+      updateData.publishedAt = new Date();
     }
 
-    const publishedAt =
-      data.published && !existingBlog.published
-        ? new Date()
-        : existingBlog.publishedAt;
+    const updated = await this.repository.update(id, updateData);
 
-    const updated = await this.repository.update(id, {
-      ...data,
-      publishedAt,
-    });
-
-    if (!updated) {
-      throw new Error("Failed to update blog");
-    }
-
-    return updated;
+    if (!updated) throw new Error("Update failed");
+    return toBlogResponseDTO(updated);
   }
-
   async deleteBlog(id: string, authorId: string): Promise<void> {
     const blog = await this.repository.findById(id);
     if (!blog) {
@@ -142,12 +133,4 @@ export class BlogService {
     }
   }
 
-  generateSlug(title: string): string {
-    return title
-      .toLowerCase()
-      .trim()
-      .replace(/[^\w\s-]/g, "")
-      .replace(/[\s_-]+/g, "-")
-      .replace(/^-+|-+$/g, "");
-  }
 }

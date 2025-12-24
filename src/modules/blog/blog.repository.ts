@@ -1,8 +1,6 @@
 import { count, desc, eq, and, sql } from "drizzle-orm";
 import { db } from "@/libs/postgres";
-import type { Blog, NewBlog } from "@/modules/blog/blog.model";
-import { blogs } from "@/modules/blog/blog.model";
-import { user } from "@/db/schema/auth/user";
+import { blogs, type Blog, type NewBlog } from "@/db/schema/blog";
 
 export class BlogRepository {
   async create(data: NewBlog): Promise<Blog> {
@@ -11,61 +9,18 @@ export class BlogRepository {
   }
 
   async findById(id: string): Promise<Blog | undefined> {
-    const [blog] = await db
-      .select({
-        id: blogs.id,
-        title: blogs.title,
-        slug: blogs.slug,
-        content: blogs.content,
-        excerpt: blogs.excerpt,
-        coverImage: blogs.coverImage,
-        published: blogs.published,
-        publishedAt: blogs.publishedAt,
-        authorId: blogs.authorId,
-        createdAt: blogs.createdAt,
-        updatedAt: blogs.updatedAt,
-        author: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          image: user.image,
-        },
-      })
-      .from(blogs)
-      .leftJoin(user, eq(blogs.authorId, user.id))
-      .where(eq(blogs.id, id))
-      .limit(1);
-
-    return blog as Blog | undefined;
+    const [blog] = await db.select().from(blogs).where(eq(blogs.id, id)).limit(1);
+    return blog;
   }
 
   async findBySlug(slug: string): Promise<Blog | undefined> {
     const [blog] = await db
-      .select({
-        id: blogs.id,
-        title: blogs.title,
-        slug: blogs.slug,
-        content: blogs.content,
-        excerpt: blogs.excerpt,
-        coverImage: blogs.coverImage,
-        published: blogs.published,
-        publishedAt: blogs.publishedAt,
-        authorId: blogs.authorId,
-        createdAt: blogs.createdAt,
-        updatedAt: blogs.updatedAt,
-        author: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          image: user.image,
-        },
-      })
+      .select()
       .from(blogs)
-      .leftJoin(user, eq(blogs.authorId, user.id))
       .where(eq(blogs.slug, slug))
       .limit(1);
 
-    return blog as Blog | undefined;
+    return blog;
   }
 
   async findAll(
@@ -73,42 +28,26 @@ export class BlogRepository {
     offset: number,
     publishedOnly = false,
   ): Promise<{ blogs: Blog[]; total: number }> {
-    const conditions = publishedOnly ? eq(blogs.published, true) : undefined;
+    const condition = publishedOnly ? eq(blogs.published, true) : undefined;
+
+    const listQuery = db
+      .select()
+      .from(blogs)
+      .orderBy(desc(blogs.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    const totalQuery = db.select({ total: count() }).from(blogs);
 
     const [blogsResult, totalResult] = await Promise.all([
-      db
-        .select({
-          id: blogs.id,
-          title: blogs.title,
-          slug: blogs.slug,
-          content: blogs.content,
-          excerpt: blogs.excerpt,
-          coverImage: blogs.coverImage,
-          published: blogs.published,
-          publishedAt: blogs.publishedAt,
-          authorId: blogs.authorId,
-          createdAt: blogs.createdAt,
-          updatedAt: blogs.updatedAt,
-          author: {
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            image: user.image,
-          },
-        })
-        .from(blogs)
-        .leftJoin(user, eq(blogs.authorId, user.id))
-        .where(conditions)
-        .orderBy(desc(blogs.createdAt))
-        .limit(limit)
-        .offset(offset),
-      db.select({ total: count() }).from(blogs).where(conditions),
+      condition ? listQuery.where(condition) : listQuery,
+      condition ? totalQuery.where(condition) : totalQuery,
     ]);
 
     const total = Number(totalResult?.[0]?.total ?? 0);
 
     return {
-      blogs: blogsResult as Blog[],
+      blogs: blogsResult,
       total,
     };
   }
@@ -118,50 +57,32 @@ export class BlogRepository {
     limit: number,
     offset: number,
   ): Promise<{ blogs: Blog[]; total: number }> {
-    const [blogsResult, totalResult] = await Promise.all([
-      db
-        .select({
-          id: blogs.id,
-          title: blogs.title,
-          slug: blogs.slug,
-          content: blogs.content,
-          excerpt: blogs.excerpt,
-          coverImage: blogs.coverImage,
-          published: blogs.published,
-          publishedAt: blogs.publishedAt,
-          authorId: blogs.authorId,
-          createdAt: blogs.createdAt,
-          updatedAt: blogs.updatedAt,
-          author: {
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            image: user.image,
-          },
-        })
-        .from(blogs)
-        .leftJoin(user, eq(blogs.authorId, user.id))
-        .where(eq(blogs.authorId, authorId))
-        .orderBy(desc(blogs.createdAt))
-        .limit(limit)
-        .offset(offset),
-      db
-        .select({ total: count() })
-        .from(blogs)
-        .where(eq(blogs.authorId, authorId)),
-    ]);
+    const listQuery = db
+      .select()
+      .from(blogs)
+      .where(eq(blogs.authorId, authorId))
+      .orderBy(desc(blogs.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    const totalQuery = db
+      .select({ total: count() })
+      .from(blogs)
+      .where(eq(blogs.authorId, authorId));
+
+    const [blogsResult, totalResult] = await Promise.all([listQuery, totalQuery]);
 
     const total = Number(totalResult?.[0]?.total ?? 0);
 
     return {
-      blogs: blogsResult as Blog[],
+      blogs: blogsResult,
       total,
     };
   }
 
   async update(
     id: string,
-    data: Partial<Omit<Blog, "id" | "authorId" | "createdAt">>,
+    data: Partial<Blog>,
   ): Promise<Blog | undefined> {
     const [blog] = await db
       .update(blogs)

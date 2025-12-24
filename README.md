@@ -34,8 +34,8 @@ src/
 │   └── env.ts                        → Environment variables (zod + dotenv)
 │
 ├── db/
-│   └── schema/                        → Drizzle schema
-│       └── (tables)
+│   └── schema/                        → Drizzle/Drizzle Kit schema
+│       └── (tables)                   → Table definitions and exported types (use these types across modules)
 │
 ├── helpers/
 │   └── response.ts                    → Standardized API responses
@@ -64,21 +64,19 @@ src/
 │   └── user-rate-limit.middleware.ts  → Per-user rate limit
 │
 ├── modules/
-│   ├── blog/
-│   │   ├── blog.controller.ts
-│   │   ├── blog.dto.ts                 → Zod schemas + response DTOs
-│   │   ├── blog.model.ts
-│   │   ├── blog.repository.ts
-│   │   ├── blog.routes.ts
-│   │   └── blog.service.ts
-│   └── user/
-│       ├── avatar.controller.ts
-│       ├── user.controller.ts
-│       ├── user.dto.ts                 → Zod schemas + response DTOs
-│       ├── user.model.ts
-│       ├── user.repository.ts
-│       ├── user.routes.ts
-│       └── user.service.ts
+│   ├── blog/                          → Feature module for blog posts
+│   │   ├── blog.controller.ts         → HTTP handlers (parse req, send responses)
+│   │   ├── blog.dto.ts                → Zod input schemas + response DTOs + mappers
+│   │   ├── blog.repository.ts         → Database access (Drizzle queries)
+│   │   ├── blog.routes.ts             → Route definitions + middleware
+│   │   └── blog.service.ts            → Business logic + DTO transformations
+│   └── user/                          → Feature module for user/account management
+│       ├── avatar.controller.ts      → Avatar upload/delete handlers (S3)
+│       ├── user.controller.ts        → HTTP handlers for user endpoints
+│       ├── user.dto.ts               → Zod input schemas + response DTOs + mappers
+│       ├── user.repository.ts        → Database access (Drizzle queries)
+│       ├── user.routes.ts            → Route definitions + middleware
+│       └── user.service.ts           → Business logic + DTO transformations
 │
 ├── routes/
 │   └── routes.ts                      → API routes aggregator (mounted at /api/v1)
